@@ -25,7 +25,12 @@ import {
 } from 'lucide-react';
 import { Brand, ShopCategory } from '../../types';
 
-const GOOGLE_MAPS_API_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY || '';
+const configuredGoogleMapsApiKey = (import.meta.env.VITE_GOOGLE_MAPS_API_KEY || '').trim();
+const GOOGLE_MAPS_API_KEY =
+  configuredGoogleMapsApiKey &&
+  !/^(MY_|YOUR_|REPLACE_|PLACEHOLDER)/i.test(configuredGoogleMapsApiKey)
+    ? configuredGoogleMapsApiKey
+    : '';
 
 const PHNOM_PENH_CENTER = { lat: 11.5518, lng: 104.9242 };
 

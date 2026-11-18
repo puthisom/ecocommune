@@ -75,7 +75,7 @@ const MainLayout: React.FC = () => {
       <Header />
 
       {/* Main Content Area */}
-      <main className="flex-1 pb-16 lg:pb-0">
+      <main className="flex-1 pb-[calc(76px+env(safe-area-inset-bottom))] lg:pb-0">
         {viewRole === 'customer' && (
           <>
             {customerTab === 'marketplace' && <MarketplacePage />}

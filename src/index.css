@@ -19,10 +19,42 @@
   --color-success: #3D8B5A;
 }
 
+html {
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+
 body {
+  margin: 0;
   font-family: 'Inter', sans-serif;
   background-color: #F7F8F2;
   color: #26332B;
+  min-width: 320px;
+  min-height: 100vh;
+  min-height: 100dvh;
+  overflow-x: hidden;
+  overscroll-behavior-y: none;
+}
+
+#root {
+  min-height: 100vh;
+  min-height: 100dvh;
+}
+
+button,
+input,
+select,
+textarea {
+  touch-action: manipulation;
+}
+
+img {
+  -webkit-user-drag: none;
+}
+
+.safe-area-pb,
+.safe-area-bottom {
+  padding-bottom: env(safe-area-inset-bottom, 0px);
 }
 
 h1, h2, h3, h4, h5, h6, .font-heading {
@@ -36,4 +68,80 @@ h1, h2, h3, h4, h5, h6, .font-heading {
 
 .eco-shadow-modal {
   box-shadow: 0px 8px 24px rgba(38, 51, 43, 0.12);
+}
+
+@media (max-width: 639px) {
+  .container {
+    width: 100%;
+    padding-left: 14px;
+    padding-right: 14px;
+  }
+
+  main {
+    scroll-padding-bottom: calc(76px + env(safe-area-inset-bottom, 0px));
+  }
+
+  button,
+  [role="button"] {
+    min-height: 44px;
+  }
+
+  input,
+  select,
+  textarea {
+    min-height: 44px;
+    font-size: 16px !important;
+  }
+
+  header {
+    padding-top: env(safe-area-inset-top, 0px);
+  }
+
+  header .container {
+    padding-top: 8px;
+    padding-bottom: 8px;
+  }
+
+  /* Keep compact phone navigation aligned and easy to tap. */
+  nav.lg\:hidden.fixed.bottom-0 {
+    min-height: calc(64px + env(safe-area-inset-bottom, 0px));
+  }
+
+  nav.lg\:hidden.fixed.bottom-0 button {
+    min-height: 52px;
+  }
+
+  /* Make product and category cards breathe consistently on narrow screens. */
+  section {
+    min-width: 0;
+  }
+
+  .eco-shadow-modal {
+    box-shadow: 0 12px 36px rgba(38, 51, 43, 0.18);
+  }
+
+  /* Full-width mobile sheets and dialogs. */
+  [role="dialog"],
+  .fixed.inset-0 > div.relative {
+    max-width: calc(100vw - 20px);
+  }
+
+  /* Prevent toasts from colliding with the bottom navigation. */
+  .fixed.bottom-16 {
+    left: 14px;
+    right: 14px;
+    width: auto;
+  }
+}
+
+@media (max-width: 359px) {
+  .container {
+    padding-left: 10px;
+    padding-right: 10px;
+  }
+
+  h1,
+  .text-2xl {
+    font-size: 1.25rem;
+  }
 }
