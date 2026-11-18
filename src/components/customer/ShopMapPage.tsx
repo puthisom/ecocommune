@@ -1,15 +1,6 @@
 import React, { useEffect, useState, useCallback } from 'react';
-import {
-  APIProvider,
-  Map as GoogleMap,
-  AdvancedMarker,
-  Pin,
-  InfoWindow,
-  useAdvancedMarkerRef,
-  useMap,
-  useApiLoadingStatus,
-  APILoadingStatus
-} from '@vis.gl/react-google-maps';
+import { MapContainer, TileLayer, Marker, Popup, useMap } from 'react-leaflet';
+import L from 'leaflet';
 import { useApp } from '../../context/AppContext';
 import {
   MapPin,
@@ -20,19 +11,11 @@ import {
   Phone,
   ShoppingBag,
   Compass,
-  RotateCcw,
-  AlertTriangle
+  RotateCcw
 } from 'lucide-react';
 import { Brand, ShopCategory } from '../../types';
 
-const configuredGoogleMapsApiKey = (import.meta.env.VITE_GOOGLE_MAPS_API_KEY || '').trim();
-const GOOGLE_MAPS_API_KEY =
-  configuredGoogleMapsApiKey &&
-  !/^(MY_|YOUR_|REPLACE_|PLACEHOLDER)/i.test(configuredGoogleMapsApiKey)
-    ? configuredGoogleMapsApiKey
-    : '';
-
-const PHNOM_PENH_CENTER = { lat: 11.5518, lng: 104.9242 };
+const PHNOM_PENH_CENTER: [number, number] = [11.5518, 104.9242];
 
 interface ShopMarkerProps {
   shop: Brand;
@@ -53,27 +36,23 @@ const ShopMarker: React.FC<ShopMarkerProps> = ({
   onGetDirections,
   onBrowseProducts
 }) => {
-  const [markerRef, marker] = useAdvancedMarkerRef();
-
   return (
     <>
-      <AdvancedMarker
-        ref={markerRef}
-        position={{ lat: shop.coordinates.lat, lng: shop.coordinates.lng }}
-        onClick={() => onSelect(shop)}
-        title={shop.name}
-        zIndex={isSelected ? 20 : 1}
+      <Marker
+        position={[shop.coordinates.lat, shop.coordinates.lng]}
+        eventHandlers={{
+          click: () => {
+            onSelect(shop);
+          }
+        }}
+        icon={L.divIcon({
+          className: 'custom-marker',
+          html: `<div class="marker-pin ${isSelected ? 'selected' : ''}"></div>`,
+          iconSize: [30, 42],
+          iconAnchor: [15, 42]
+        })}
       >
-        <Pin
-          background={isSelected ? '#286B4A' : '#FFFFFF'}
-          borderColor={isSelected ? '#FFFFFF' : '#286B4A'}
-          glyphColor={isSelected ? '#E6B84A' : '#286B4A'}
-          scale={isSelected ? 1.25 : 1.0}
-        />
-      </AdvancedMarker>
-
-      {isInfoOpen && marker && (
-        <InfoWindow anchor={marker} onCloseClick={onCloseInfo} maxWidth={260}>
+        <Popup className="shop-popup">
           <div className="p-1 space-y-2 text-[#26332B] font-sans">
             <div className="flex items-start gap-2">
               <span className="text-lg leading-none">{shop.logo}</span>
@@ -99,8 +78,8 @@ const ShopMarker: React.FC<ShopMarkerProps> = ({
               </button>
             </div>
           </div>
-        </InfoWindow>
-      )}
+        </Popup>
+      </Marker>
     </>
   );
 };
@@ -120,19 +99,13 @@ const MapCameraController: React.FC<MapCameraControllerProps> = ({
 
   useEffect(() => {
     if (!map || !selectedShop) return;
-    map.panTo({
-      lat: selectedShop.coordinates.lat,
-      lng: selectedShop.coordinates.lng
-    });
+    map.panTo([selectedShop.coordinates.lat, selectedShop.coordinates.lng]);
   }, [map, selectedShop]);
 
   useEffect(() => {
     if (!map || fitBoundsTrigger === 0 || shops.length === 0) return;
     if (shops.length === 1) {
-      map.panTo({
-        lat: shops[0].coordinates.lat,
-        lng: shops[0].coordinates.lng
-      });
+      map.panTo([shops[0].coordinates.lat, shops[0].coordinates.lng]);
       map.setZoom(15);
       return;
     }
@@ -140,13 +113,11 @@ const MapCameraController: React.FC<MapCameraControllerProps> = ({
     const lats = shops.map((s) => s.coordinates.lat);
     const lngs = shops.map((s) => s.coordinates.lng);
     map.fitBounds(
-      {
-        north: Math.max(...lats),
-        south: Math.min(...lats),
-        east: Math.max(...lngs),
-        west: Math.min(...lngs)
-      },
-      60
+      L.latLngBounds(
+        L.latLng(Math.min(...lats), Math.min(...lngs)),
+        L.latLng(Math.max(...lats), Math.max(...lngs))
+      ),
+      { padding: [60, 60] }
     );
   }, [map, fitBoundsTrigger, shops]);
 
@@ -154,19 +125,6 @@ const MapCameraController: React.FC<MapCameraControllerProps> = ({
 };
 
 const MapStatusBanner: React.FC = () => {
-  const status = useApiLoadingStatus();
-
-  if (status === APILoadingStatus.FAILED || status === APILoadingStatus.AUTH_FAILURE) {
-    return (
-      <div className="bg-amber-50 border-b border-amber-200 text-amber-900 px-3.5 py-2 text-xs flex items-center gap-2">
-        <AlertTriangle className="w-4 h-4 shrink-0 text-amber-700" />
-        <span>
-          Unable to load interactive map tiles right now. You can still browse shop locations and open Google Maps directions below.
-        </span>
-      </div>
-    );
-  }
-
   return null;
 };
 
@@ -234,9 +192,8 @@ export const ShopMapPage: React.FC = () => {
     setInfoWindowShopId(shop.id);
   }, []);
 
-  const handleOpenGoogleMaps = useCallback((shop: Brand) => {
-    const query = encodeURIComponent(`${shop.name}, ${shop.address}, Phnom Penh, Cambodia`);
-    const url = `https://www.google.com/maps/dir/?api=1&destination=${shop.coordinates.lat},${shop.coordinates.lng}&query=${query}`;
+  const handleOpenDirections = useCallback((shop: Brand) => {
+    const url = `https://www.openstreetmap.org/directions?from=&to=${shop.coordinates.lat}%2C${shop.coordinates.lng}`;
     window.open(url, '_blank', 'noopener,noreferrer');
   }, []);
 
@@ -302,7 +259,7 @@ export const ShopMapPage: React.FC = () => {
 
       {/* Main Map & Side Details Layout */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
-        {/* Left Column: Interactive Google Map (7 cols on desktop) */}
+        {/* Left Column: Interactive Leaflet Map (7 cols on desktop) */}
         <div className="lg:col-span-7 bg-[#FFFFFF] rounded-2xl border border-[#DCE4DB] overflow-hidden eco-shadow-sm flex flex-col">
           {/* Map Top Bar */}
           <div className="p-3.5 bg-[#F7F8F2] border-b border-[#DCE4DB] flex items-center justify-between gap-2 text-xs">
@@ -320,59 +277,42 @@ export const ShopMapPage: React.FC = () => {
             </button>
           </div>
 
-          {/* Interactive Google Map Canvas */}
+          {/* Interactive OpenStreetMap Canvas */}
           <div className="w-full h-[420px] sm:h-[520px] relative bg-[#EDF4EB]">
-            {GOOGLE_MAPS_API_KEY ? (
-              <APIProvider apiKey={GOOGLE_MAPS_API_KEY} libraries={['marker']} language="en" region="KH">
-                <MapStatusBanner />
-                <div className="w-full h-full">
-                  <GoogleMap
-                    mapId="DEMO_MAP_ID"
-                    defaultCenter={
-                      currentShop
-                        ? { lat: currentShop.coordinates.lat, lng: currentShop.coordinates.lng }
-                        : PHNOM_PENH_CENTER
-                    }
-                    defaultZoom={14}
-                    gestureHandling="greedy"
-                    mapTypeControl={true}
-                    streetViewControl={true}
-                    fullscreenControl={true}
-                    zoomControl={true}
-                    internalUsageAttributionIds={['gmp_mcp_codeassist_v1_aistudio']}
-                    style={{ width: '100%', height: '100%' }}
-                  >
-                    <MapCameraController
-                      selectedShop={currentShop}
-                      shops={filteredShops}
-                      fitBoundsTrigger={fitBoundsTrigger}
-                    />
-                    {filteredShops.map((shop) => (
-                      <ShopMarker
-                        key={shop.id}
-                        shop={shop}
-                        isSelected={shop.id === currentShop?.id}
-                        isInfoOpen={infoWindowShopId === shop.id}
-                        onSelect={handleShopSelect}
-                        onCloseInfo={() => setInfoWindowShopId(null)}
-                        onGetDirections={handleOpenGoogleMaps}
-                        onBrowseProducts={handleBrowseShopProducts}
-                      />
-                    ))}
-                  </GoogleMap>
-                </div>
-              </APIProvider>
-            ) : (
-              <div className="w-full h-full flex flex-col items-center justify-center p-8 text-center space-y-3 bg-[#F7F8F2]">
-                <MapPin className="w-10 h-10 text-[#286B4A]" />
-                <h3 className="text-base font-bold text-[#26332B] font-heading">
-                  Google Maps API Key Required
-                </h3>
-                <p className="text-xs text-[#718078] max-w-md leading-relaxed">
-                  Configure <code className="bg-white px-1.5 py-0.5 rounded border border-[#DCE4DB]">VITE_GOOGLE_MAPS_API_KEY</code> in your environment to render the interactive Google Map. You can still select shops on the right and open Google Maps directions directly.
-                </p>
-              </div>
-            )}
+            <MapContainer
+              center={
+                currentShop
+                  ? [currentShop.coordinates.lat, currentShop.coordinates.lng]
+                  : PHNOM_PENH_CENTER
+              }
+              zoom={14}
+              scrollWheelZoom={true}
+              style={{ width: '100%', height: '100%' }}
+              className="leaflet-container"
+            >
+              <MapStatusBanner />
+              <TileLayer
+                url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+                attribution='&copy; <a href="http://osm.org/copyright">OpenStreetMap</a> contributors'
+              />
+              <MapCameraController
+                selectedShop={currentShop}
+                shops={filteredShops}
+                fitBoundsTrigger={fitBoundsTrigger}
+              />
+              {filteredShops.map((shop) => (
+                <ShopMarker
+                  key={shop.id}
+                  shop={shop}
+                  isSelected={shop.id === currentShop?.id}
+                  isInfoOpen={infoWindowShopId === shop.id}
+                  onSelect={handleShopSelect}
+                  onCloseInfo={() => setInfoWindowShopId(null)}
+                  onGetDirections={handleOpenDirections}
+                  onBrowseProducts={handleBrowseShopProducts}
+                />
+              ))}
+            </MapContainer>
           </div>
         </div>
 
@@ -432,11 +372,11 @@ export const ShopMapPage: React.FC = () => {
               {/* Action Buttons */}
               <div className="flex flex-col sm:flex-row gap-2.5 pt-1">
                 <button
-                  onClick={() => handleOpenGoogleMaps(currentShop)}
+                  onClick={() => handleOpenDirections(currentShop)}
                   className="flex-1 bg-[#286B4A] hover:bg-[#1F543A] text-white py-2.5 px-3 rounded-xl text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors shadow-xs"
                 >
                   <Navigation className="w-4 h-4" />
-                  <span>Get Directions (Google Maps)</span>
+                  <span>Get Directions (OpenStreetMap)</span>
                   <ExternalLink className="w-3 h-3 opacity-80" />
                 </button>
 

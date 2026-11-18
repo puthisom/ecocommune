@@ -26,6 +26,10 @@ const MainLayout: React.FC = () => {
     return () => window.removeEventListener('gmp-quota-exceeded', handleQuotaExceeded);
   }, []);
 
+  useEffect(() => {
+    window.scrollTo({ top: 0, left: 0, behavior: 'auto' });
+  }, [customerTab, viewRole]);
+
   if (!authSession.isAuthenticated && !authSession.isGuest) {
     return (
       <div className="min-h-screen flex flex-col bg-[#F7F8F2] text-[#26332B] overflow-x-clip">
