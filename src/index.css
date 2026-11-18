@@ -1,0 +1,39 @@
+@import "tailwindcss";
+
+@theme {
+  --font-heading: 'Poppins', sans-serif;
+  --font-sans: 'Inter', sans-serif;
+
+  --color-forest: #286B4A;
+  --color-forest-dark: #1F543A;
+  --color-forest-light: #34845C;
+  --color-sage: #A8C5A0;
+  --color-sage-light: #EDF4EB;
+  --color-ivory: #F7F8F2;
+  --color-accent: #E6B84A;
+  --color-accent-light: #FDF7E7;
+  --color-charcoal: #26332B;
+  --color-muted: #718078;
+  --color-border: #DCE4DB;
+  --color-error: #D9534F;
+  --color-success: #3D8B5A;
+}
+
+body {
+  font-family: 'Inter', sans-serif;
+  background-color: #F7F8F2;
+  color: #26332B;
+}
+
+h1, h2, h3, h4, h5, h6, .font-heading {
+  font-family: 'Poppins', sans-serif;
+}
+
+/* Custom scrollbars and subtle shadows according to design spec */
+.eco-shadow-sm {
+  box-shadow: 0px 2px 8px rgba(38, 51, 43, 0.08);
+}
+
+.eco-shadow-modal {
+  box-shadow: 0px 8px 24px rgba(38, 51, 43, 0.12);
+}
