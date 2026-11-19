@@ -209,8 +209,12 @@ export const Header: React.FC = () => {
             className="flex items-center gap-2 p-1.5 rounded-lg hover:bg-[#F7F8F2] transition-colors text-left"
             title="Profile & Rewards"
           >
-            <div className="w-8 h-8 rounded-full bg-[#A8C5A0]/40 text-[#286B4A] flex items-center justify-center font-semibold text-xs border border-[#A8C5A0]">
-              {user.avatar || <User className="w-4 h-4" />}
+            <div className="w-8 h-8 rounded-full bg-[#A8C5A0]/40 text-[#286B4A] flex items-center justify-center font-semibold text-xs border border-[#A8C5A0] overflow-hidden">
+              {user.avatar.startsWith('http') || user.avatar.startsWith('data:') ? (
+                <img src={user.avatar} alt="" className="w-full h-full object-cover" />
+              ) : (
+                user.avatar || <User className="w-4 h-4" />
+              )}
             </div>
             <div className="hidden xl:block leading-tight">
               <span className="text-xs font-medium text-[#26332B] block truncate max-w-[90px]">

@@ -167,7 +167,10 @@ interface AppContextType {
   toggleFavoriteProduct: (productId: string) => void;
   toggleFavoriteBrand: (brandId: string) => void;
   redeemReward: (rewardId: string) => { success: boolean; message: string };
-  updateUserProfile: (updates: Partial<UserProfile>) => void;
+  updateUserProfile: (
+    updates: Partial<UserProfile>,
+    avatarFile?: File
+  ) => Promise<{ success: boolean; message: string }>;
   addAddress: (address: Omit<DeliveryAddress, 'id'>) => void;
   updateAddress: (id: string, address: Partial<DeliveryAddress>) => void;
   deleteAddress: (id: string) => void;
@@ -521,42 +524,129 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     return { success: true, message: `Successfully redeemed! Voucher code: ${code}` };
   };
 
-  const updateUserProfile = (updates: Partial<UserProfile>) => {
-    setUser((prev) => {
-      const next = { ...prev, ...updates };
+  const updateUserProfile = async (
+    updates: Partial<UserProfile>,
+    avatarFile?: File
+  ): Promise<{ success: boolean; message: string }> => {
+    const next = { ...user, ...updates };
+    const supportedAvatarTypes = ['image/jpeg', 'image/png', 'image/webp'];
+    const maxAvatarSize = 2 * 1024 * 1024;
 
-      if (isSupabaseConfigured && supabase && authSession.isAuthenticated) {
-        const client = supabase;
-        void client.auth.getUser().then(({ data }) => {
-          const userId = data.user?.id;
-          if (!userId) return;
+    if (avatarFile && !supportedAvatarTypes.includes(avatarFile.type)) {
+      return { success: false, message: 'Choose a JPEG, PNG, or WebP image.' };
+    }
+    if (avatarFile && avatarFile.size > maxAvatarSize) {
+      return { success: false, message: 'Profile pictures must be 2 MB or smaller.' };
+    }
 
-          void client
-            .from('profiles')
-            .update({
-              name: next.name,
-              email: next.email,
-              phone: next.phone,
-              updated_at: new Date().toISOString()
-            })
-            .eq('id', userId);
-        });
+    if (isSupabaseConfigured && supabase && authSession.isAuthenticated) {
+      const { data: authData, error: authError } = await supabase.auth.getUser();
+      if (authError || !authData.user) {
+        return { success: false, message: authError?.message || 'Your session has expired. Please sign in again.' };
+      }
 
-        void client.auth.updateUser({
+      let avatarUrl = next.avatar;
+      let uploadedAvatarPath: string | undefined;
+      if (avatarFile) {
+        const extension = avatarFile.type === 'image/png' ? 'png' : avatarFile.type === 'image/webp' ? 'webp' : 'jpg';
+        const avatarPath = `${authData.user.id}/${crypto.randomUUID()}.${extension}`;
+        const { error: uploadError } = await supabase.storage
+          .from('user-avatars')
+          .upload(avatarPath, avatarFile, {
+            cacheControl: '3600',
+            contentType: avatarFile.type,
+            upsert: false
+          });
+        if (uploadError) {
+            if (uploadError.message.toLowerCase().includes('bucket not found')) {
+              return {
+                success: false,
+                message: 'Supabase storage bucket "user-avatars" is missing. Run supabase/profiles.sql in your project\'s SQL Editor, then try again.'
+              };
+            }
+          return { success: false, message: `Profile picture upload failed: ${uploadError.message}` };
+        }
+
+        uploadedAvatarPath = avatarPath;
+        avatarUrl = `${supabase.storage.from('user-avatars').getPublicUrl(avatarPath).data.publicUrl}?v=${Date.now()}`;
+        next.avatar = avatarUrl;
+      }
+
+      const { data: savedProfile, error: profileError } = await supabase
+        .from('profiles')
+        .update({
+          name: next.name,
+          email: next.email,
+          phone: next.phone,
+          avatar_url: avatarUrl.startsWith('http') ? avatarUrl : null,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', authData.user.id)
+        .select('id')
+        .maybeSingle();
+
+      if (profileError || !savedProfile) {
+        let cleanupMessage = '';
+        if (uploadedAvatarPath) {
+          const { error: cleanupError } = await supabase.storage
+            .from('user-avatars')
+            .remove([uploadedAvatarPath]);
+          if (cleanupError) {
+            cleanupMessage = ` The uploaded image could not be removed: ${cleanupError.message}`;
+          }
+        }
+        return {
+          success: false,
+          message: `${profileError?.message || 'Your profile could not be saved. Please run the latest Supabase profile SQL and try again.'}${cleanupMessage}`
+        };
+      }
+
+      setUser(next);
+      setAuthSession((current) => ({
+        ...current,
+        email: next.email,
+        displayName: next.name
+      }));
+
+      try {
+        const { error: metadataError } = await supabase.auth.updateUser({
           email: next.email,
           data: { name: next.name, phone: next.phone }
         });
-
-        setAuthSession((current) => ({
-          ...current,
-          email: next.email,
-          displayName: next.name
-        }));
+        if (metadataError) {
+          showToast(`Profile saved, but account details could not be synced: ${metadataError.message}`, 'error');
+        } else {
+          showToast('Profile updated', 'success');
+        }
+      } catch (error) {
+        const message = error instanceof Error ? error.message : 'An unexpected error occurred.';
+        showToast(`Profile saved, but account details could not be synced: ${message}`, 'error');
       }
+      return { success: true, message: 'Profile updated.' };
+    }
 
-      return next;
-    });
+    if (avatarFile) {
+      try {
+        next.avatar = await new Promise<string>((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => {
+            if (typeof reader.result === 'string') resolve(reader.result);
+            else reject(new Error('The selected image could not be read.'));
+          };
+          reader.onerror = () => reject(reader.error || new Error('The selected image could not be read.'));
+          reader.readAsDataURL(avatarFile);
+        });
+      } catch (error) {
+        return {
+          success: false,
+          message: error instanceof Error ? error.message : 'The selected image could not be read.'
+        };
+      }
+    }
+
+    setUser(next);
     showToast('Profile updated', 'success');
+    return { success: true, message: 'Profile updated.' };
   };
 
   // Delivery Address management
@@ -791,7 +881,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       const user = data.user;
       const { data: profile } = await supabase
         .from('profiles')
-        .select('name, phone, role, seller_brand_id')
+        .select('name, phone, role, seller_brand_id, avatar_url')
         .eq('id', user.id)
         .maybeSingle();
 
@@ -808,12 +898,15 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         sellerBrandId: targetBrandId || undefined
       });
       setViewRole(profileRole);
-      setUser(loadAccountProfile(
-        user.email || cleanEmail,
-        profile?.name || user.user_metadata?.name,
-        profile?.phone ?? user.user_metadata?.phone ?? '',
-        true
-      ));
+      setUser({
+        ...loadAccountProfile(
+          user.email || cleanEmail,
+          profile?.name || user.user_metadata?.name,
+          profile?.phone ?? user.user_metadata?.phone ?? '',
+          true
+        ),
+        avatar: profile?.avatar_url || INITIAL_USER.avatar
+      });
       showToast(`Signed in as ${displayName}`, 'success');
       return { success: true, message: 'Signed in successfully.' };
     }
@@ -955,7 +1048,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
       const { data: profile } = await client
         .from('profiles')
-        .select('name, phone, role, seller_brand_id')
+        .select('name, phone, role, seller_brand_id, avatar_url')
         .eq('id', user.id)
         .maybeSingle();
 
@@ -969,12 +1062,15 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         sellerBrandId: profile?.seller_brand_id || undefined
       });
       setViewRole(role);
-      setUser(loadAccountProfile(
-        user.email || '',
-        profile?.name || user.user_metadata?.name,
-        profile?.phone ?? user.user_metadata?.phone ?? '',
-        true
-      ));
+      setUser({
+        ...loadAccountProfile(
+          user.email || '',
+          profile?.name || user.user_metadata?.name,
+          profile?.phone ?? user.user_metadata?.phone ?? '',
+          true
+        ),
+        avatar: profile?.avatar_url || INITIAL_USER.avatar
+      });
     };
 
     syncSupabaseSession();

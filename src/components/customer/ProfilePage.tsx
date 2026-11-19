@@ -12,6 +12,7 @@ import {
   X, 
   RefreshCcw,
   Sparkles,
+  Camera,
   Gift,
   Copy,
   TrendingUp,
@@ -59,6 +60,10 @@ export const ProfilePage: React.FC = () => {
   const [editName, setEditName] = useState(user.name);
   const [editEmail, setEditEmail] = useState(user.email);
   const [editPhone, setEditPhone] = useState(user.phone);
+  const [avatarFile, setAvatarFile] = useState<File | null>(null);
+  const [avatarPreviewUrl, setAvatarPreviewUrl] = useState<string | null>(null);
+  const [profileSaveError, setProfileSaveError] = useState('');
+  const [isSavingProfile, setIsSavingProfile] = useState(false);
 
   const [isAddressModalOpen, setIsAddressModalOpen] = useState(false);
   const [editingAddressId, setEditingAddressId] = useState<string | null>(null);
@@ -81,6 +86,17 @@ export const ProfilePage: React.FC = () => {
     setAddrPhone(user.phone);
   }, [user.name, user.email, user.phone]);
 
+  useEffect(() => {
+    if (!avatarFile) {
+      setAvatarPreviewUrl(null);
+      return;
+    }
+
+    const previewUrl = URL.createObjectURL(avatarFile);
+    setAvatarPreviewUrl(previewUrl);
+    return () => URL.revokeObjectURL(previewUrl);
+  }, [avatarFile]);
+
   // Favorite items lists
   const favoriteProductsList = products.filter((p) => user.favoriteProductIds.includes(p.id));
   const favoriteBrandsList = brands.filter((b) => user.favoriteBrandIds.includes(b.id));
@@ -99,14 +115,48 @@ export const ProfilePage: React.FC = () => {
   };
 
   // Handle Save Profile
-  const handleSaveProfile = (e: React.FormEvent) => {
+  const handleSaveProfile = async (e: React.FormEvent) => {
     e.preventDefault();
-    updateUserProfile({
-      name: editName,
-      email: editEmail,
-      phone: editPhone
-    });
-    setIsEditProfileOpen(false);
+    if (isSavingProfile) return;
+    setIsSavingProfile(true);
+    setProfileSaveError('');
+
+    try {
+      const result = await updateUserProfile({
+        name: editName,
+        email: editEmail,
+        phone: editPhone
+      }, avatarFile || undefined);
+      if (!result.success) {
+        setProfileSaveError(result.message);
+        return;
+      }
+
+      setAvatarFile(null);
+      setIsEditProfileOpen(false);
+    } catch (error) {
+      setProfileSaveError(error instanceof Error ? error.message : 'Profile could not be saved.');
+    } finally {
+      setIsSavingProfile(false);
+    }
+  };
+
+  const handleAvatarSelection = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    event.target.value = '';
+    if (!file) return;
+
+    if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type)) {
+      setProfileSaveError('Choose a JPEG, PNG, or WebP image.');
+      return;
+    }
+    if (file.size > 2 * 1024 * 1024) {
+      setProfileSaveError('Profile pictures must be 2 MB or smaller.');
+      return;
+    }
+
+    setProfileSaveError('');
+    setAvatarFile(file);
   };
 
   // Open Add Address
@@ -182,8 +232,12 @@ export const ProfilePage: React.FC = () => {
       {/* Profile & Rewards Overview Header Card */}
       <div className="bg-[#FFFFFF] rounded-2xl border border-[#DCE4DB] p-6 eco-shadow-sm flex flex-col lg:flex-row items-start lg:items-center justify-between gap-6">
         <div className="flex items-center gap-4">
-          <div className="w-16 h-16 rounded-2xl bg-[#EDF4EB] text-2xl flex items-center justify-center border border-[#A8C5A0] font-semibold text-[#286B4A] shrink-0">
-            {user.avatar || '👩'}
+          <div className="w-16 h-16 rounded-2xl bg-[#EDF4EB] text-2xl flex items-center justify-center border border-[#A8C5A0] font-semibold text-[#286B4A] shrink-0 overflow-hidden">
+            {user.avatar.startsWith('http') || user.avatar.startsWith('data:') ? (
+              <img src={user.avatar} alt={`${user.name}'s profile`} className="w-full h-full object-cover" />
+            ) : (
+              user.avatar || '👩'
+            )}
           </div>
           <div>
             <div className="flex items-center gap-2">
@@ -235,6 +289,8 @@ export const ProfilePage: React.FC = () => {
                 setEditName(user.name);
                 setEditEmail(user.email);
                 setEditPhone(user.phone);
+                setAvatarFile(null);
+                setProfileSaveError('');
                 setIsEditProfileOpen(true);
               }}
               className="px-4 py-2.5 rounded-xl text-xs font-semibold bg-[#F7F8F2] hover:bg-[#DCE4DB] text-[#26332B] border border-[#DCE4DB] flex items-center gap-1.5 transition-colors"
@@ -916,7 +972,7 @@ export const ProfilePage: React.FC = () => {
             className="fixed inset-0 bg-[#26332B]/50 backdrop-blur-xs"
             onClick={() => setIsEditProfileOpen(false)}
           />
-          <div className="relative w-full max-w-md bg-[#FFFFFF] rounded-2xl eco-shadow-modal p-6 z-10 border border-[#DCE4DB] space-y-4">
+          <div className="relative w-full max-w-md bg-[#FFFFFF] rounded-2xl eco-shadow-modal p-6 z-10 border border-[#DCE4DB] space-y-4 max-h-[90vh] overflow-y-auto">
             <div className="flex justify-between items-center pb-2 border-b border-[#DCE4DB]">
               <h3 className="font-bold text-base text-[#26332B] font-heading">Edit Profile</h3>
               <button onClick={() => setIsEditProfileOpen(false)}>
@@ -924,6 +980,37 @@ export const ProfilePage: React.FC = () => {
               </button>
             </div>
             <form onSubmit={handleSaveProfile} className="space-y-3 text-xs">
+              <div className="flex items-center gap-4">
+                <div className="w-16 h-16 rounded-full bg-[#EDF4EB] border border-[#A8C5A0] overflow-hidden flex items-center justify-center text-2xl text-[#286B4A] shrink-0">
+                  {avatarPreviewUrl || user.avatar.startsWith('http') || user.avatar.startsWith('data:') ? (
+                    <img
+                      src={avatarPreviewUrl || user.avatar}
+                      alt="Profile picture preview"
+                      className="w-full h-full object-cover"
+                    />
+                  ) : (
+                    user.avatar || '👩'
+                  )}
+                </div>
+                <div className="space-y-1.5">
+                  <label className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg border border-[#DCE4DB] text-[#26332B] font-semibold hover:bg-[#F7F8F2] cursor-pointer">
+                    <Camera className="w-3.5 h-3.5" />
+                    <span>Choose Profile Picture</span>
+                    <input
+                      type="file"
+                      accept="image/jpeg,image/png,image/webp"
+                      onChange={handleAvatarSelection}
+                      className="sr-only"
+                    />
+                  </label>
+                  <p className="text-[11px] text-[#718078]">JPEG, PNG, or WebP · up to 2 MB · hosted publicly</p>
+                </div>
+              </div>
+              {profileSaveError && (
+                <p role="alert" className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-red-700">
+                  {profileSaveError}
+                </p>
+              )}
               <div>
                 <label className="block font-medium text-[#718078] mb-1">Full Name</label>
                 <input
@@ -965,8 +1052,9 @@ export const ProfilePage: React.FC = () => {
                 <button
                   type="submit"
                   className="px-4 py-2 bg-[#286B4A] text-white rounded-lg font-semibold hover:bg-[#1F543A]"
+                  disabled={isSavingProfile}
                 >
-                  Save Changes
+                  {isSavingProfile ? 'Saving...' : 'Save Changes'}
                 </button>
               </div>
             </form>
