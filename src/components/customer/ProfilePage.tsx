@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useApp } from '../../context/AppContext';
 import { 
   MapPin, 
@@ -72,6 +72,14 @@ export const ProfilePage: React.FC = () => {
   const [selectedOrderDetails, setSelectedOrderDetails] = useState<Order | null>(null);
   const [isChangePasswordOpen, setIsChangePasswordOpen] = useState(false);
   const [notificationsEnabled, setNotificationsEnabled] = useState(true);
+
+  useEffect(() => {
+    setEditName(user.name);
+    setEditEmail(user.email);
+    setEditPhone(user.phone);
+    setAddrRecipient(user.name);
+    setAddrPhone(user.phone);
+  }, [user.name, user.email, user.phone]);
 
   // Favorite items lists
   const favoriteProductsList = products.filter((p) => user.favoriteProductIds.includes(p.id));

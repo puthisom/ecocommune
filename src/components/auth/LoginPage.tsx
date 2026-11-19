@@ -6,6 +6,7 @@ import {
   Store,
   Shield,
   Mail,
+  Phone,
   Lock,
   Eye,
   EyeOff,
@@ -60,9 +61,11 @@ export const LoginPage: React.FC = () => {
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [phone, setPhone] = useState('');
   const [sellerBrandId, setSellerBrandId] = useState<string>(brands[0]?.id || 'brand-1');
   const [showPassword, setShowPassword] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   const roleInfo = ROLE_CONFIG[selectedRole];
 
@@ -74,31 +77,38 @@ export const LoginPage: React.FC = () => {
     }
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (isSubmitting) return;
+    setIsSubmitting(true);
     setErrorMsg('');
 
-    const result = login({
-      role: selectedRole,
-      email,
-      password,
-      name: isSignUp ? name : undefined,
-      sellerBrandId: selectedRole === 'seller' ? sellerBrandId : undefined,
-      isSignUp
-    });
+    try {
+      const result = await login({
+        role: selectedRole,
+        email,
+        password,
+        name: isSignUp ? name : undefined,
+        phone: isSignUp ? phone : undefined,
+        sellerBrandId: selectedRole === 'seller' ? sellerBrandId : undefined,
+        isSignUp
+      });
 
-    if (!result.success) {
-      setErrorMsg(result.message);
+      if (!result.success) {
+        setErrorMsg(result.message);
+      }
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
-  const handleQuickDemoLogin = () => {
+  const handleQuickDemoLogin = async () => {
     setIsSignUp(false);
     setErrorMsg('');
     setEmail(roleInfo.demoEmail);
     setPassword(roleInfo.demoPassword);
 
-    const result = login({
+    const result = await login({
       role: selectedRole,
       email: roleInfo.demoEmail,
       password: roleInfo.demoPassword,
@@ -308,6 +318,25 @@ export const LoginPage: React.FC = () => {
                 </div>
               </div>
 
+              {isSignUp && (
+                <div>
+                  <label className="block text-xs font-semibold text-[#26332B] mb-1.5">
+                    Phone Number
+                  </label>
+                  <div className="relative">
+                    <Phone className="w-4 h-4 text-[#718078] absolute left-3.5 top-1/2 -translate-y-1/2" />
+                    <input
+                      type="tel"
+                      required
+                      value={phone}
+                      onChange={(e) => setPhone(e.target.value)}
+                      placeholder="e.g. +855 12 345 678"
+                      className="w-full pl-10 pr-3.5 py-2.5 text-sm bg-[#FFFFFF] border border-[#DCE4DB] rounded-lg focus:outline-none focus:border-[#286B4A] text-[#26332B]"
+                    />
+                  </div>
+                </div>
+              )}
+
               <div>
                 <label className="block text-xs font-semibold text-[#26332B] mb-1.5">
                   Password
@@ -319,7 +348,7 @@ export const LoginPage: React.FC = () => {
                     required
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
-                    placeholder="Enter password (min. 4 characters)"
+                    placeholder="Enter password (min. 6 characters)"
                     className="w-full pl-10 pr-10 py-2.5 text-sm bg-[#FFFFFF] border border-[#DCE4DB] rounded-lg focus:outline-none focus:border-[#286B4A] text-[#26332B]"
                   />
                   <button
@@ -336,11 +365,14 @@ export const LoginPage: React.FC = () => {
               <button
                 type="submit"
                 className="w-full py-3 px-4 bg-[#286B4A] hover:bg-[#1F543A] text-white font-semibold text-sm rounded-[10px] transition-colors shadow-xs flex items-center justify-center gap-2"
+                disabled={isSubmitting}
               >
                 <span>
-                  {isSignUp
-                    ? `Create ${roleInfo.label} Account`
-                    : `Sign In as ${roleInfo.label}`}
+                  {isSubmitting
+                    ? 'Please wait...'
+                    : isSignUp
+                      ? `Create ${roleInfo.label} Account`
+                      : `Sign In as ${roleInfo.label}`}
                 </span>
                 <ArrowRight className="w-4 h-4" />
               </button>

@@ -1,4 +1,5 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import { isSupabaseConfigured, supabase } from '../lib/supabase';
 import { 
   Product, 
   Brand, 
@@ -31,6 +32,64 @@ interface ToastMessage {
   text: string;
 }
 
+interface RegisteredAccount {
+  role: ViewRole;
+  email: string;
+  password: string;
+  name: string;
+  phone?: string;
+  sellerBrandId?: string;
+}
+
+const createAccountProfile = (email: string, name: string, phone = ''): UserProfile => ({
+  ...INITIAL_USER,
+  name,
+  email,
+  phone,
+  pointsBalance: 0,
+  totalPointsEarned: 0,
+  totalPointsRedeemed: 0,
+  favoriteProductIds: [],
+  favoriteBrandIds: []
+});
+
+const loadAccountProfile = (email: string, name?: string, phone?: string, preferProvided = false): UserProfile => {
+  const accountEmail = email.trim().toLowerCase();
+  const fallbackName = name || (accountEmail === INITIAL_USER.email.toLowerCase()
+    ? INITIAL_USER.name
+    : accountEmail.split('@')[0] || 'Eco Member');
+  const baseProfile = accountEmail === INITIAL_USER.email.toLowerCase()
+    ? INITIAL_USER
+    : createAccountProfile(accountEmail, fallbackName);
+
+  try {
+    const savedProfiles = localStorage.getItem('ecocommune_user_profiles');
+    const profiles = savedProfiles
+      ? JSON.parse(savedProfiles) as Record<string, Partial<UserProfile>>
+      : {};
+    let savedProfile: Partial<UserProfile> | undefined = profiles[accountEmail];
+
+    // Migrate the original single-profile data for the built-in demo customer.
+    if (!savedProfile && accountEmail === INITIAL_USER.email.toLowerCase()) {
+      const legacyProfile = localStorage.getItem('ecocommune_user');
+      const candidate = legacyProfile ? JSON.parse(legacyProfile) as Partial<UserProfile> : undefined;
+      savedProfile = candidate?.email?.toLowerCase() === accountEmail ? candidate : undefined;
+    }
+
+    return {
+      ...baseProfile,
+      ...savedProfile,
+      name: preferProvided ? name || savedProfile?.name || fallbackName : savedProfile?.name || name || fallbackName,
+      email: accountEmail,
+      phone: preferProvided
+        ? phone ?? savedProfile?.phone ?? baseProfile.phone
+        : savedProfile?.phone ?? phone ?? baseProfile.phone
+    };
+  } catch {
+    return { ...baseProfile, name: fallbackName, email: accountEmail, phone: phone ?? baseProfile.phone };
+  }
+};
+
 interface AppContextType {
   // Navigation & Role
   viewRole: ViewRole;
@@ -47,9 +106,10 @@ interface AppContextType {
     email: string;
     password: string;
     name?: string;
+    phone?: string;
     sellerBrandId?: string;
     isSignUp?: boolean;
-  }) => { success: boolean; message: string };
+  }) => Promise<{ success: boolean; message: string }>;
   continueAsGuest: () => void;
   logout: () => void;
   openLoginPage: () => void;
@@ -230,14 +290,9 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     }
   });
 
-  const [user, setUser] = useState<UserProfile>(() => {
-    try {
-      const saved = localStorage.getItem('ecocommune_user');
-      return saved ? JSON.parse(saved) : INITIAL_USER;
-    } catch {
-      return INITIAL_USER;
-    }
-  });
+  const [user, setUser] = useState<UserProfile>(() => authSession.isAuthenticated
+    ? loadAccountProfile(authSession.email, authSession.displayName)
+    : INITIAL_USER);
 
   const [addresses, setAddresses] = useState<DeliveryAddress[]>(() => {
     try {
@@ -286,8 +341,18 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   }, [redemptions]);
 
   useEffect(() => {
-    localStorage.setItem('ecocommune_user', JSON.stringify(user));
-  }, [user]);
+    if (!authSession.isAuthenticated || !authSession.email) return;
+    try {
+      const savedProfiles = localStorage.getItem('ecocommune_user_profiles');
+      const profiles = savedProfiles
+        ? JSON.parse(savedProfiles) as Record<string, UserProfile>
+        : {};
+      profiles[authSession.email.toLowerCase()] = user;
+      localStorage.setItem('ecocommune_user_profiles', JSON.stringify(profiles));
+    } catch {
+      // Keep profile updates available for the current session if storage is unavailable.
+    }
+  }, [user, authSession.email, authSession.isAuthenticated]);
 
   useEffect(() => {
     localStorage.setItem('ecocommune_addresses', JSON.stringify(addresses));
@@ -457,7 +522,40 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   };
 
   const updateUserProfile = (updates: Partial<UserProfile>) => {
-    setUser((prev) => ({ ...prev, ...updates }));
+    setUser((prev) => {
+      const next = { ...prev, ...updates };
+
+      if (isSupabaseConfigured && supabase && authSession.isAuthenticated) {
+        const client = supabase;
+        void client.auth.getUser().then(({ data }) => {
+          const userId = data.user?.id;
+          if (!userId) return;
+
+          void client
+            .from('profiles')
+            .update({
+              name: next.name,
+              email: next.email,
+              phone: next.phone,
+              updated_at: new Date().toISOString()
+            })
+            .eq('id', userId);
+        });
+
+        void client.auth.updateUser({
+          email: next.email,
+          data: { name: next.name, phone: next.phone }
+        });
+
+        setAuthSession((current) => ({
+          ...current,
+          email: next.email,
+          displayName: next.name
+        }));
+      }
+
+      return next;
+    });
     showToast('Profile updated', 'success');
   };
 
@@ -590,11 +688,12 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     showToast('Reward deleted', 'info');
   };
 
-  const login = ({
+  const login = async ({
     role,
     email,
     password,
     name,
+    phone,
     sellerBrandId,
     isSignUp
   }: {
@@ -602,26 +701,124 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     email: string;
     password: string;
     name?: string;
+    phone?: string;
     sellerBrandId?: string;
     isSignUp?: boolean;
-  }): { success: boolean; message: string } => {
+  }): Promise<{ success: boolean; message: string }> => {
     const cleanEmail = email.trim().toLowerCase();
     if (!cleanEmail || !password.trim()) {
       return { success: false, message: 'Please enter both your email and password.' };
     }
-
-    if (password.trim().length < 4) {
-      return { success: false, message: 'Password must be at least 4 characters.' };
+    if (password.trim().length < 6) {
+      return { success: false, message: 'Password must be at least 6 characters.' };
     }
 
-    let registeredAccounts: Array<{
-      role: ViewRole;
-      email: string;
-      password: string;
-      name: string;
-      sellerBrandId?: string;
-    }> = [];
+    if (isSupabaseConfigured && supabase) {
+      if (role === 'admin' && isSignUp) {
+        return { success: false, message: 'Admin accounts cannot be self-registered.' };
+      }
 
+      if (isSignUp) {
+        const { data, error } = await supabase.auth.signUp({
+          email: cleanEmail,
+          password,
+          options: {
+            data: {
+              name: name?.trim() || cleanEmail.split('@')[0],
+              phone: phone?.trim() || '',
+              role,
+              seller_brand_id: role === 'seller' ? (sellerBrandId || brands[0]?.id || 'brand-1') : undefined
+            }
+          }
+        });
+
+        if (error) {
+          const message = error.message.toLowerCase();
+          if (message.includes('rate limit') || message.includes('email rate')) {
+            return { success: false, message: 'Too many registration emails were sent. Please wait a few minutes before trying again.' };
+          }
+          if (message.includes('email address') && message.includes('invalid')) {
+            return { success: false, message: 'Enter a valid email address.' };
+          }
+          if (message.includes('already registered') || message.includes('already exists')) {
+            return { success: false, message: 'An account already exists for this email. Please sign in instead.' };
+          }
+          return { success: false, message: error.message };
+        }
+
+        if (!data.user) {
+          return { success: false, message: 'Registration could not be completed. Please try again.' };
+        }
+
+        const identities = data.user.identities;
+        if (identities && identities.length === 0) {
+          return { success: false, message: 'An account already exists for this email. Please sign in instead.' };
+        }
+
+        if (!data.session) {
+          return { success: true, message: 'Account created. Check your email and confirm the account before signing in.' };
+        }
+
+        const displayName = name?.trim() || cleanEmail.split('@')[0];
+        setAuthSession({
+          isAuthenticated: true,
+          isGuest: false,
+          role,
+          email: cleanEmail,
+          displayName,
+          sellerBrandId: role === 'seller' ? (sellerBrandId || brands[0]?.id || 'brand-1') : undefined
+        });
+        setViewRole(role);
+        showToast(`Welcome to ecocommune, ${displayName}!`, 'success');
+
+        setUser(loadAccountProfile(cleanEmail, displayName, phone?.trim() || '', true));
+
+        return { success: true, message: 'Account created and signed in.' };
+      }
+
+      const { data, error } = await supabase.auth.signInWithPassword({ email: cleanEmail, password });
+      if (error) {
+        const message = error.message.toLowerCase();
+        if (message.includes('email not confirmed')) {
+          return { success: false, message: 'Please confirm your email address, then sign in again.' };
+        }
+        if (message.includes('invalid login credentials')) {
+          return { success: false, message: 'Email or password is incorrect. Check your details and try again.' };
+        }
+        return { success: false, message: error.message };
+      }
+
+      const user = data.user;
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('name, phone, role, seller_brand_id')
+        .eq('id', user.id)
+        .maybeSingle();
+
+      const profileRole = (profile?.role as ViewRole) || role;
+      const displayName = profile?.name || user.user_metadata?.name || user.email?.split('@')[0] || 'Eco Member';
+      const targetBrandId = profile?.seller_brand_id || sellerBrandId;
+
+      setAuthSession({
+        isAuthenticated: true,
+        isGuest: false,
+        role: profileRole,
+        email: user.email || cleanEmail,
+        displayName,
+        sellerBrandId: targetBrandId || undefined
+      });
+      setViewRole(profileRole);
+      setUser(loadAccountProfile(
+        user.email || cleanEmail,
+        profile?.name || user.user_metadata?.name,
+        profile?.phone ?? user.user_metadata?.phone ?? '',
+        true
+      ));
+      showToast(`Signed in as ${displayName}`, 'success');
+      return { success: true, message: 'Signed in successfully.' };
+    }
+
+    let registeredAccounts: RegisteredAccount[] = [];
     try {
       const savedAccounts = localStorage.getItem('ecocommune_accounts');
       registeredAccounts = savedAccounts ? JSON.parse(savedAccounts) : [];
@@ -630,133 +827,61 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     }
 
     const demoAccounts: Record<ViewRole, { email: string; password: string; name: string }> = {
-      customer: {
-        email: INITIAL_USER.email.toLowerCase(),
-        password: 'eco123',
-        name: INITIAL_USER.name
-      },
-      seller: {
-        email: 'seller@ecocommune.kh',
-        password: 'seller123',
-        name: 'Partner Merchant'
-      },
-      admin: {
-        email: 'admin@ecocommune.kh',
-        password: 'admin123',
-        name: 'Platform Administrator'
-      }
+      customer: { email: INITIAL_USER.email.toLowerCase(), password: 'eco123', name: INITIAL_USER.name },
+      seller: { email: 'seller@ecocommune.kh', password: 'seller123', name: 'Partner Merchant' },
+      admin: { email: 'admin@ecocommune.kh', password: 'admin123', name: 'Platform Administrator' }
     };
 
     if (isSignUp) {
-      if (role === 'admin') {
-        return { success: false, message: 'Admin accounts cannot be self-registered.' };
-      }
-      const exists =
-        registeredAccounts.some((acc) => acc.email === cleanEmail && acc.role === role) ||
-        demoAccounts[role].email === cleanEmail;
-      if (exists) {
-        return { success: false, message: 'An account with this email already exists for this role.' };
-      }
+      if (role === 'admin') return { success: false, message: 'Admin accounts cannot be self-registered.' };
+      const exists = registeredAccounts.some((acc) => acc.email === cleanEmail && acc.role === role) || demoAccounts[role].email === cleanEmail;
+      if (exists) return { success: false, message: 'An account with this email already exists for this role.' };
 
       const displayName = name?.trim() || cleanEmail.split('@')[0];
       const targetBrandId = sellerBrandId || brands[0]?.id || 'brand-1';
-
       registeredAccounts.push({
         role,
         email: cleanEmail,
         password,
         name: displayName,
+        phone: phone?.trim() || '',
         sellerBrandId: role === 'seller' ? targetBrandId : undefined
       });
       localStorage.setItem('ecocommune_accounts', JSON.stringify(registeredAccounts));
 
       if (role === 'customer') {
-        setUser((prev) => ({
-          ...prev,
-          name: displayName,
-          email: cleanEmail
-        }));
+        setUser(loadAccountProfile(cleanEmail, displayName, phone?.trim() || ''));
         setCustomerTab('marketplace');
       } else if (role === 'seller') {
         setActiveSellerBrandId(targetBrandId);
       }
-
-      setAuthSession({
-        isAuthenticated: true,
-        isGuest: false,
-        role,
-        email: cleanEmail,
-        displayName,
-        sellerBrandId: role === 'seller' ? targetBrandId : undefined
-      });
+      setAuthSession({ isAuthenticated: true, isGuest: false, role, email: cleanEmail, displayName, sellerBrandId: role === 'seller' ? targetBrandId : undefined });
       setViewRole(role);
       showToast(`Welcome to ecocommune, ${displayName}!`, 'success');
       return { success: true, message: 'Account created and signed in.' };
     }
 
-    // Sign in check against registered accounts or demo account
-    const matchedRegistered = registeredAccounts.find(
-      (acc) => acc.email === cleanEmail && acc.role === role
-    );
-    const demoAccount = demoAccounts[role];
-
+    const matchedRegistered = registeredAccounts.find((acc) => acc.email === cleanEmail && acc.role === role);
     if (matchedRegistered) {
-      if (matchedRegistered.password !== password) {
-        return { success: false, message: 'Incorrect password for this account.' };
-      }
+      if (matchedRegistered.password !== password) return { success: false, message: 'Incorrect password for this account.' };
       const targetBrandId = sellerBrandId || matchedRegistered.sellerBrandId || brands[0]?.id || 'brand-1';
-      if (role === 'customer') {
-        setUser((prev) => ({
-          ...prev,
-          name: matchedRegistered.name,
-          email: matchedRegistered.email
-        }));
-        setCustomerTab('marketplace');
-      } else if (role === 'seller') {
-        setActiveSellerBrandId(targetBrandId);
-      }
-      setAuthSession({
-        isAuthenticated: true,
-        isGuest: false,
-        role,
-        email: matchedRegistered.email,
-        displayName: matchedRegistered.name,
-        sellerBrandId: role === 'seller' ? targetBrandId : undefined
-      });
+      setUser(loadAccountProfile(cleanEmail, matchedRegistered.name, matchedRegistered.phone));
+      setAuthSession({ isAuthenticated: true, isGuest: false, role, email: matchedRegistered.email, displayName: matchedRegistered.name, sellerBrandId: role === 'seller' ? targetBrandId : undefined });
       setViewRole(role);
       showToast(`Signed in as ${matchedRegistered.name}`, 'success');
       return { success: true, message: 'Signed in successfully.' };
     }
 
+    const demoAccount = demoAccounts[role];
     if (cleanEmail === demoAccount.email && password === demoAccount.password) {
-      const targetBrandId = sellerBrandId || brands[0]?.id || 'brand-1';
-      if (role === 'customer') {
-        setCustomerTab('marketplace');
-      } else if (role === 'seller') {
-        setActiveSellerBrandId(targetBrandId);
-      }
-      setAuthSession({
-        isAuthenticated: true,
-        isGuest: false,
-        role,
-        email: demoAccount.email,
-        displayName: role === 'seller'
-          ? brands.find((b) => b.id === targetBrandId)?.name || demoAccount.name
-          : demoAccount.name,
-        sellerBrandId: role === 'seller' ? targetBrandId : undefined
-      });
+      setUser(loadAccountProfile(cleanEmail, demoAccount.name, cleanEmail === INITIAL_USER.email.toLowerCase() ? INITIAL_USER.phone : ''));
+      setAuthSession({ isAuthenticated: true, isGuest: false, role, email: demoAccount.email, displayName: demoAccount.name, sellerBrandId: role === 'seller' ? (brands[0]?.id || 'brand-1') : undefined });
       setViewRole(role);
-      showToast(
-        `Signed in to ${role === 'customer' ? 'Customer' : role === 'seller' ? 'Seller' : 'Admin'} portal`,
-        'success'
-      );
+      showToast(`Signed in to ${role} portal`, 'success');
       return { success: true, message: 'Signed in successfully.' };
     }
 
-    return {
-      success: false,
-      message: `Invalid ${role} credentials. Use the demo credentials shown below or create a new account.`
-    };
+    return { success: false, message: `Invalid ${role} credentials. Use the demo credentials or create a new account.` };
   };
 
   const continueAsGuest = () => {
@@ -772,7 +897,10 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     showToast('Browsing ecocommune Marketplace as guest', 'info');
   };
 
-  const logout = () => {
+  const logout = async () => {
+    if (isSupabaseConfigured && supabase) {
+      await supabase.auth.signOut();
+    }
     setAuthSession({
       isAuthenticated: false,
       isGuest: false,
@@ -815,6 +943,51 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     setCommissionRate(0.10);
     showToast('Demonstration data reset to defaults', 'info');
   };
+
+  useEffect(() => {
+    if (!isSupabaseConfigured || !supabase) return;
+    const client = supabase;
+
+    const syncSupabaseSession = async () => {
+      const { data } = await client.auth.getSession();
+      const user = data.session?.user;
+      if (!user) return;
+
+      const { data: profile } = await client
+        .from('profiles')
+        .select('name, phone, role, seller_brand_id')
+        .eq('id', user.id)
+        .maybeSingle();
+
+      const role = (profile?.role as ViewRole) || 'customer';
+      setAuthSession({
+        isAuthenticated: true,
+        isGuest: false,
+        role,
+        email: user.email || '',
+        displayName: profile?.name || user.user_metadata?.name || user.email?.split('@')[0] || 'Eco Member',
+        sellerBrandId: profile?.seller_brand_id || undefined
+      });
+      setViewRole(role);
+      setUser(loadAccountProfile(
+        user.email || '',
+        profile?.name || user.user_metadata?.name,
+        profile?.phone ?? user.user_metadata?.phone ?? '',
+        true
+      ));
+    };
+
+    syncSupabaseSession();
+
+    const { data: authListener } = client.auth.onAuthStateChange((event) => {
+      if (event === 'SIGNED_OUT') {
+        setAuthSession({ isAuthenticated: false, isGuest: false, role: 'customer', email: '', displayName: '' });
+        setViewRole('customer');
+      }
+    });
+
+    return () => authListener.subscription.unsubscribe();
+  }, []);
 
   return (
     <AppContext.Provider
