@@ -26,6 +26,9 @@ import {
   INITIAL_REDEMPTIONS 
 } from '../data/mockData';
 
+export const MAX_PROFILE_IMAGE_SIZE_MB = 10;
+const MAX_PROFILE_IMAGE_SIZE_BYTES = MAX_PROFILE_IMAGE_SIZE_MB * 1024 * 1024;
+
 interface ToastMessage {
   id: string;
   type: 'success' | 'info' | 'error';
@@ -39,6 +42,30 @@ interface RegisteredAccount {
   name: string;
   phone?: string;
   sellerBrandId?: string;
+}
+
+interface SupabaseProfileRecord {
+  name: string | null;
+  email: string;
+  phone: string | null;
+  avatar_url: string | null;
+  points_balance: number | null;
+  total_points_earned: number | null;
+  total_points_redeemed: number | null;
+  favorite_product_ids: string[] | null;
+  favorite_brand_ids: string[] | null;
+  notifications_enabled: boolean | null;
+}
+
+interface SupabaseCustomerAccountData {
+  addresses: unknown;
+  orders: unknown;
+  redemptions: unknown;
+  cart: unknown;
+}
+
+interface SupabaseManagedOrderRecord {
+  order_data: unknown;
 }
 
 const PRODUCT_IMAGE_VERSION_KEY = 'ecocommune_product_image_version';
@@ -116,6 +143,47 @@ const createAccountProfile = (email: string, name: string, phone = ''): UserProf
   favoriteProductIds: [],
   favoriteBrandIds: []
 });
+
+const parseAccountArray = <T,>(value: unknown): T[] =>
+  Array.isArray(value) ? value as T[] : [];
+
+const mergeSupabaseProfile = (
+  localProfile: UserProfile,
+  remoteProfile: SupabaseProfileRecord | null,
+  migrateLocalValues: boolean
+): UserProfile => {
+  if (!remoteProfile) return localProfile;
+
+  const remoteFavoriteProducts = remoteProfile.favorite_product_ids || [];
+  const remoteFavoriteBrands = remoteProfile.favorite_brand_ids || [];
+  return {
+    ...localProfile,
+    name: remoteProfile.name || localProfile.name,
+    email: localProfile.email,
+    phone: migrateLocalValues && !remoteProfile.phone
+      ? localProfile.phone
+      : remoteProfile.phone ?? localProfile.phone,
+    avatar: remoteProfile.avatar_url || localProfile.avatar,
+    pointsBalance: migrateLocalValues && !remoteProfile.points_balance
+      ? localProfile.pointsBalance
+      : remoteProfile.points_balance ?? localProfile.pointsBalance,
+    totalPointsEarned: migrateLocalValues && !remoteProfile.total_points_earned
+      ? localProfile.totalPointsEarned
+      : remoteProfile.total_points_earned ?? localProfile.totalPointsEarned,
+    totalPointsRedeemed: migrateLocalValues && !remoteProfile.total_points_redeemed
+      ? localProfile.totalPointsRedeemed
+      : remoteProfile.total_points_redeemed ?? localProfile.totalPointsRedeemed,
+    favoriteProductIds: migrateLocalValues && remoteFavoriteProducts.length === 0
+      ? localProfile.favoriteProductIds
+      : remoteFavoriteProducts,
+    favoriteBrandIds: migrateLocalValues && remoteFavoriteBrands.length === 0
+      ? localProfile.favoriteBrandIds
+      : remoteFavoriteBrands,
+    notificationsEnabled: migrateLocalValues
+      ? localProfile.notificationsEnabled ?? remoteProfile.notifications_enabled ?? true
+      : remoteProfile.notifications_enabled ?? localProfile.notificationsEnabled ?? true
+  };
+};
 
 const loadAccountProfile = (email: string, name?: string, phone?: string, preferProvided = false): UserProfile => {
   const accountEmail = email.trim().toLowerCase();
@@ -195,6 +263,7 @@ interface AppContextType {
   continueAsGuest: () => void;
   logout: () => void;
   openLoginPage: () => void;
+  updatePassword: (currentPassword: string, newPassword: string) => Promise<{ success: boolean; message: string }>;
   
   // Browsing & Filters
   selectedCategory: ProductCategory | 'All';
@@ -303,7 +372,11 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     };
   });
   const activeAccountId = getActiveAccountId(authSession);
+  const activeSupabaseAccountKey = authSession.userId
+    ? `${authSession.userId}:${activeAccountId || ''}`
+    : null;
   const [loadedAccountId, setLoadedAccountId] = useState(activeAccountId);
+  const [loadedSupabaseAccountKey, setLoadedSupabaseAccountKey] = useState<string | null>(null);
 
   const [viewRole, setViewRole] = useState<ViewRole>(() => authSession.role || 'customer');
   const [customerTab, setCustomerTab] = useState<CustomerTab>('marketplace');
@@ -481,6 +554,279 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   }, [activeAccountId, addresses, loadedAccountId]);
 
   useEffect(() => {
+    if (!isSupabaseConfigured || !supabase || !authSession.isAuthenticated || !authSession.userId) {
+      setLoadedSupabaseAccountKey(null);
+      return;
+    }
+    if (loadedSupabaseAccountKey === activeSupabaseAccountKey || loadedAccountId !== activeAccountId) return;
+
+    const client = supabase;
+    const userId = authSession.userId;
+    const accountKey = activeSupabaseAccountKey;
+    const accountEmail = authSession.email.trim().toLowerCase();
+    let isCurrent = true;
+
+    const loadSupabaseAccount = async () => {
+      try {
+        const [profileResult, accountDataResult] = await Promise.all([
+          client
+            .from('profiles')
+            .select('name, email, phone, avatar_url, points_balance, total_points_earned, total_points_redeemed, favorite_product_ids, favorite_brand_ids, notifications_enabled')
+            .eq('id', userId)
+            .maybeSingle(),
+          client
+            .from('customer_account_data')
+            .select('addresses, orders, redemptions, cart')
+            .eq('user_id', userId)
+            .maybeSingle()
+        ]);
+        if (!isCurrent) return;
+
+        if (profileResult.error || accountDataResult.error) {
+          const errorMessage = profileResult.error?.message || accountDataResult.error?.message;
+          showToast(
+            `Account data could not be loaded from Supabase: ${errorMessage}. Run the latest supabase/profiles.sql in your Supabase SQL Editor.`,
+            'error'
+          );
+          return;
+        }
+
+        const savedProfile = profileResult.data as SupabaseProfileRecord | null;
+        const savedAccountData = accountDataResult.data as SupabaseCustomerAccountData | null;
+        const localProfile = loadAccountProfile(accountEmail, authSession.displayName);
+        const migratedOrders = orders.filter(
+          (order) => order.customerEmail?.trim().toLowerCase() === accountEmail
+        );
+
+        const migratedOrdersWithOwnerId = migratedOrders.map((order) => ({
+          ...order,
+          customerUserId: order.customerUserId || userId
+        }));
+        let accountOrders = migratedOrdersWithOwnerId;
+        if (savedAccountData) {
+          accountOrders = parseAccountArray<Order>(savedAccountData.orders).map((order) => (
+            {
+              ...order,
+              customerEmail: order.customerEmail || accountEmail,
+              customerUserId: order.customerUserId || userId
+            }
+          ));
+          setAddresses(parseAccountArray<DeliveryAddress>(savedAccountData.addresses));
+          setRedemptions(parseAccountArray<RewardRedemption>(savedAccountData.redemptions));
+          setCart(parseAccountArray<CartItem>(savedAccountData.cart));
+          setOrders((currentOrders) => [
+            ...accountOrders,
+            ...currentOrders.filter((order) =>
+              order.customerUserId !== userId &&
+              order.customerEmail?.trim().toLowerCase() !== accountEmail
+            )
+          ]);
+        } else {
+          const { error: migrationError } = await client
+            .from('customer_account_data')
+            .upsert({
+              user_id: userId,
+              addresses,
+              orders: migratedOrdersWithOwnerId,
+              redemptions,
+              cart,
+              updated_at: new Date().toISOString()
+            }, { onConflict: 'user_id' });
+          if (!isCurrent) return;
+          if (migrationError) {
+            showToast(`Your existing account data could not be migrated to Supabase: ${migrationError.message}`, 'error');
+            return;
+          }
+          setOrders((currentOrders) => currentOrders.map((order) =>
+            order.customerEmail?.trim().toLowerCase() === accountEmail
+              ? { ...order, customerUserId: order.customerUserId || userId }
+              : order
+          ));
+        }
+
+        if (authSession.role === 'seller' || authSession.role === 'admin') {
+          const { data: managedOrderRows, error: managedOrdersError } = await client.rpc('get_manageable_orders');
+          if (!isCurrent) return;
+          if (managedOrdersError) {
+            showToast(`Platform orders could not be loaded from Supabase: ${managedOrdersError.message}`, 'error');
+          } else {
+            const managedOrders = parseAccountArray<SupabaseManagedOrderRecord>(managedOrderRows)
+              .map((row) => row.order_data as Order);
+            setOrders((currentOrders) => [
+              ...managedOrders,
+              ...currentOrders.filter((order) =>
+                !managedOrders.some((managedOrder) => managedOrder.id === order.id)
+              )
+            ]);
+          }
+        }
+
+        let accountProfile = mergeSupabaseProfile(localProfile, savedProfile, !savedAccountData);
+        if (!savedProfile?.avatar_url && accountProfile.avatar.startsWith('data:image/')) {
+          try {
+            const avatarResponse = await fetch(accountProfile.avatar);
+            const avatarBlob = await avatarResponse.blob();
+            const extensionByType: Record<string, string> = {
+              'image/jpeg': 'jpg',
+              'image/png': 'png',
+              'image/webp': 'webp'
+            };
+            const extension = extensionByType[avatarBlob.type];
+            if (!extension || avatarBlob.size > MAX_PROFILE_IMAGE_SIZE_BYTES) {
+              throw new Error(`The saved profile photo must be JPEG, PNG, or WebP and no larger than ${MAX_PROFILE_IMAGE_SIZE_MB} MB.`);
+            }
+
+            const avatarPath = `${userId}/${crypto.randomUUID()}.${extension}`;
+            const { error: avatarUploadError } = await client.storage
+              .from('user-avatars')
+              .upload(avatarPath, avatarBlob, {
+                cacheControl: '3600',
+                contentType: avatarBlob.type,
+                upsert: false
+              });
+            if (avatarUploadError) throw avatarUploadError;
+
+            accountProfile = {
+              ...accountProfile,
+              avatar: `${client.storage.from('user-avatars').getPublicUrl(avatarPath).data.publicUrl}?v=${Date.now()}`
+            };
+          } catch (error) {
+            const message = error instanceof Error ? error.message : 'Unexpected storage error.';
+            showToast(`The saved profile photo could not be migrated to Supabase: ${message}`, 'error');
+          }
+        }
+        if (!isCurrent) return;
+
+        setUser(accountProfile);
+        setLoadedSupabaseAccountKey(accountKey);
+      } catch (error) {
+        if (!isCurrent) return;
+        const message = error instanceof Error ? error.message : 'Unexpected Supabase error.';
+        showToast(`Account data could not be loaded from Supabase: ${message}`, 'error');
+      }
+    };
+
+    void loadSupabaseAccount();
+    return () => {
+      isCurrent = false;
+    };
+  }, [
+    activeAccountId,
+    activeSupabaseAccountKey,
+    addresses,
+    authSession.displayName,
+    authSession.email,
+    authSession.isAuthenticated,
+    authSession.userId,
+    cart,
+    loadedAccountId,
+    loadedSupabaseAccountKey,
+    orders,
+    redemptions
+  ]);
+
+  useEffect(() => {
+    if (
+      !isSupabaseConfigured ||
+      !supabase ||
+      !authSession.isAuthenticated ||
+      !authSession.userId ||
+      loadedSupabaseAccountKey !== activeSupabaseAccountKey ||
+      loadedAccountId !== activeAccountId
+    ) return;
+
+    const client = supabase;
+    const timeoutId = window.setTimeout(() => {
+      void (async () => {
+        try {
+          const { error } = await client
+            .from('customer_account_data')
+            .upsert({
+              user_id: authSession.userId,
+              addresses,
+              orders: orders.filter(
+                (order) =>
+                  order.customerUserId === authSession.userId ||
+                  order.customerEmail?.trim().toLowerCase() === authSession.email.trim().toLowerCase()
+              ),
+              redemptions,
+              cart,
+              updated_at: new Date().toISOString()
+            }, { onConflict: 'user_id' });
+          if (error) showToast(`Account data could not be saved to Supabase: ${error.message}`, 'error');
+        } catch (error) {
+          const message = error instanceof Error ? error.message : 'Unexpected Supabase error.';
+          showToast(`Account data could not be saved to Supabase: ${message}`, 'error');
+        }
+      })();
+    }, 250);
+
+    return () => window.clearTimeout(timeoutId);
+  }, [
+    activeAccountId,
+    addresses,
+    authSession.email,
+    authSession.isAuthenticated,
+    authSession.userId,
+    activeSupabaseAccountKey,
+    cart,
+    loadedAccountId,
+    loadedSupabaseAccountKey,
+    orders,
+    redemptions
+  ]);
+
+  useEffect(() => {
+    if (
+      !isSupabaseConfigured ||
+      !supabase ||
+      !authSession.isAuthenticated ||
+      !authSession.userId ||
+      loadedSupabaseAccountKey !== activeSupabaseAccountKey ||
+      loadedAccountId !== activeAccountId
+    ) return;
+
+    const client = supabase;
+    void (async () => {
+      try {
+        const { data, error } = await client
+          .from('profiles')
+          .update({
+            email: user.email,
+            name: user.name,
+            phone: user.phone,
+            avatar_url: user.avatar.startsWith('http') ? user.avatar : null,
+            points_balance: user.pointsBalance,
+            total_points_earned: user.totalPointsEarned,
+            total_points_redeemed: user.totalPointsRedeemed,
+            favorite_product_ids: user.favoriteProductIds,
+            favorite_brand_ids: user.favoriteBrandIds,
+            notifications_enabled: user.notificationsEnabled ?? true,
+            updated_at: new Date().toISOString()
+          })
+          .eq('id', authSession.userId)
+          .select('id')
+          .maybeSingle();
+        if (error || !data) {
+          showToast(`Profile could not be saved to Supabase: ${error?.message || 'Profile row is missing. Run the latest Supabase SQL setup.'}`, 'error');
+        }
+      } catch (error) {
+        const message = error instanceof Error ? error.message : 'Unexpected Supabase error.';
+        showToast(`Profile could not be saved to Supabase: ${message}`, 'error');
+      }
+    })();
+  }, [
+    activeAccountId,
+    authSession.email,
+    authSession.isAuthenticated,
+    authSession.userId,
+    activeSupabaseAccountKey,
+    loadedAccountId,
+    loadedSupabaseAccountKey,
+    user
+  ]);
+
+  useEffect(() => {
     localStorage.setItem('ecocommune_commission_rate', JSON.stringify(commissionRate));
   }, [commissionRate]);
 
@@ -507,7 +853,10 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   const cartTotal = cartSubtotal + deliveryFee;
   const cartItemCount = cart.reduce((sum, item) => sum + item.quantity, 0);
   const myOrders = authSession.isAuthenticated
-    ? orders.filter((order) => order.customerEmail?.trim().toLowerCase() === authSession.email.trim().toLowerCase())
+    ? orders.filter((order) =>
+      (Boolean(authSession.userId) && order.customerUserId === authSession.userId) ||
+      order.customerEmail?.trim().toLowerCase() === authSession.email.trim().toLowerCase()
+    )
     : [];
 
   const addToCart = (product: Product, quantity = 1) => {
@@ -564,6 +913,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         : authSession.isGuest
           ? GUEST_ACCOUNT_ID
           : undefined,
+      customerUserId: authSession.userId,
       customerPhone: shippingInfo.phone || user.phone,
       deliveryAddress: shippingInfo.address,
       items: cart.map((c) => ({
@@ -657,13 +1007,12 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   ): Promise<{ success: boolean; message: string }> => {
     const next = { ...user, ...updates };
     const supportedAvatarTypes = ['image/jpeg', 'image/png', 'image/webp'];
-    const maxAvatarSize = 2 * 1024 * 1024;
 
     if (avatarFile && !supportedAvatarTypes.includes(avatarFile.type)) {
       return { success: false, message: 'Choose a JPEG, PNG, or WebP image.' };
     }
-    if (avatarFile && avatarFile.size > maxAvatarSize) {
-      return { success: false, message: 'Profile pictures must be 2 MB or smaller.' };
+    if (avatarFile && avatarFile.size > MAX_PROFILE_IMAGE_SIZE_BYTES) {
+      return { success: false, message: `Profile pictures must be ${MAX_PROFILE_IMAGE_SIZE_MB} MB or smaller.` };
     }
 
     if (isSupabaseConfigured && supabase && authSession.isAuthenticated) {
@@ -706,6 +1055,12 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
           email: next.email,
           phone: next.phone,
           avatar_url: avatarUrl.startsWith('http') ? avatarUrl : null,
+          points_balance: next.pointsBalance,
+          total_points_earned: next.totalPointsEarned,
+          total_points_redeemed: next.totalPointsRedeemed,
+          favorite_product_ids: next.favoriteProductIds,
+          favorite_brand_ids: next.favoriteBrandIds,
+          notifications_enabled: next.notificationsEnabled ?? true,
           updated_at: new Date().toISOString()
         })
         .eq('id', authData.user.id)
@@ -731,7 +1086,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       setUser(next);
       setAuthSession((current) => ({
         ...current,
-        email: next.email,
+        email: next.email.trim().toLowerCase(),
         displayName: next.name
       }));
 
@@ -826,6 +1181,55 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   const updateOrderStatus = (orderId: string, newStatus: OrderStatus) => {
     const order = orders.find((item) => item.id === orderId);
     if (!order) return;
+
+    if (
+      isSupabaseConfigured &&
+      supabase &&
+      authSession.isAuthenticated &&
+      (authSession.role === 'seller' || authSession.role === 'admin')
+    ) {
+      if (!order.customerUserId) {
+        showToast('This order is missing its Supabase customer link. Refresh the dashboard and try again.', 'error');
+        return;
+      }
+
+      const client = supabase;
+      void (async () => {
+        try {
+          const { data, error } = await client.rpc('update_manageable_order_status', {
+            p_order_id: order.id,
+            p_customer_user_id: order.customerUserId,
+            p_status: newStatus
+          });
+          if (error || !data) {
+            showToast(`Order status could not be saved to Supabase: ${error?.message || 'No updated order was returned.'}`, 'error');
+            return;
+          }
+
+          const updatedOrder = data as Order;
+          setOrders((currentOrders) => currentOrders.map((item) =>
+            item.id === updatedOrder.id ? updatedOrder : item
+          ));
+          if (
+            updatedOrder.pointsAwarded &&
+            !order.pointsAwarded &&
+            order.customerUserId === authSession.userId
+          ) {
+            const pointsEarned = Math.floor(order.subtotal);
+            setUser((currentUser) => ({
+              ...currentUser,
+              pointsBalance: currentUser.pointsBalance + pointsEarned,
+              totalPointsEarned: currentUser.totalPointsEarned + pointsEarned
+            }));
+          }
+          showToast(`Order ${order.id} status changed to ${newStatus}`, 'success');
+        } catch (error) {
+          const message = error instanceof Error ? error.message : 'Unexpected Supabase error.';
+          showToast(`Order status could not be saved to Supabase: ${message}`, 'error');
+        }
+      })();
+      return;
+    }
 
     const shouldAwardPoints = newStatus === 'Completed' && !order.pointsAwarded;
     setOrders((prev) =>
@@ -1003,6 +1407,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
           role,
           email: cleanEmail,
           displayName,
+          userId: data.user.id,
           sellerBrandId: role === 'seller' ? (sellerBrandId || brands[0]?.id || 'brand-1') : undefined
         });
         setViewRole(role);
@@ -1026,12 +1431,15 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       }
 
       const user = data.user;
-      const { data: profile } = await supabase
+      const { data: profile, error: profileError } = await supabase
         .from('profiles')
-        .select('name, phone, role, seller_brand_id, avatar_url')
+        .select('name, email, phone, role, seller_brand_id, avatar_url, points_balance, total_points_earned, total_points_redeemed, favorite_product_ids, favorite_brand_ids, notifications_enabled')
         .eq('id', user.id)
         .maybeSingle();
 
+      if (profileError) {
+        showToast(`Profile could not be loaded from Supabase: ${profileError.message}`, 'error');
+      }
       const profileRole = (profile?.role as ViewRole) || role;
       const displayName = profile?.name || user.user_metadata?.name || user.email?.split('@')[0] || 'Eco Member';
       const targetBrandId = profile?.seller_brand_id || sellerBrandId;
@@ -1042,18 +1450,19 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         role: profileRole,
         email: user.email || cleanEmail,
         displayName,
+        userId: user.id,
         sellerBrandId: targetBrandId || undefined
       });
       setViewRole(profileRole);
-      setUser({
-        ...loadAccountProfile(
+      setUser(mergeSupabaseProfile(
+        loadAccountProfile(
           user.email || cleanEmail,
           profile?.name || user.user_metadata?.name,
-          profile?.phone ?? user.user_metadata?.phone ?? '',
-          true
+          profile?.phone ?? user.user_metadata?.phone ?? ''
         ),
-        avatar: profile?.avatar_url || INITIAL_USER.avatar
-      });
+        profile as SupabaseProfileRecord | null,
+        true
+      ));
       showToast(`Signed in as ${displayName}`, 'success');
       return { success: true, message: 'Signed in successfully.' };
     }
@@ -1155,6 +1564,61 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     showToast('Signed out successfully', 'info');
   };
 
+  const updatePassword = async (
+    currentPassword: string,
+    newPassword: string
+  ): Promise<{ success: boolean; message: string }> => {
+    if (!currentPassword || !newPassword) {
+      return { success: false, message: 'Enter your current and new passwords.' };
+    }
+    if (newPassword.trim().length < 6) {
+      return { success: false, message: 'New password must be at least 6 characters.' };
+    }
+    if (currentPassword === newPassword) {
+      return { success: false, message: 'Choose a different password from your current one.' };
+    }
+
+    if (isSupabaseConfigured && supabase && authSession.isAuthenticated) {
+      const { error: reauthError } = await supabase.auth.signInWithPassword({
+        email: authSession.email,
+        password: currentPassword
+      });
+      if (reauthError) {
+        return { success: false, message: 'Your current password is incorrect.' };
+      }
+
+      const { error } = await supabase.auth.updateUser({ password: newPassword });
+      if (error) return { success: false, message: error.message };
+      showToast('Password updated', 'success');
+      return { success: true, message: 'Password updated.' };
+    }
+
+    try {
+      const savedAccounts = localStorage.getItem('ecocommune_accounts');
+      const accounts = savedAccounts ? JSON.parse(savedAccounts) as RegisteredAccount[] : [];
+      const account = accounts.find((item) =>
+        item.email.toLowerCase() === authSession.email.toLowerCase() &&
+        item.role === authSession.role
+      );
+      if (!account) {
+        return { success: false, message: 'Password changes require a registered account.' };
+      }
+      if (account.password !== currentPassword) {
+        return { success: false, message: 'Your current password is incorrect.' };
+      }
+
+      account.password = newPassword;
+      localStorage.setItem('ecocommune_accounts', JSON.stringify(accounts));
+      showToast('Password updated', 'success');
+      return { success: true, message: 'Password updated.' };
+    } catch (error) {
+      return {
+        success: false,
+        message: error instanceof Error ? error.message : 'Password could not be saved.'
+      };
+    }
+  };
+
   const openLoginPage = () => {
     setAuthSession((prev) => ({
       ...prev,
@@ -1205,12 +1669,15 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       const user = data.session?.user;
       if (!user) return;
 
-      const { data: profile } = await client
+      const { data: profile, error: profileError } = await client
         .from('profiles')
-        .select('name, phone, role, seller_brand_id, avatar_url')
+        .select('name, email, phone, role, seller_brand_id, avatar_url, points_balance, total_points_earned, total_points_redeemed, favorite_product_ids, favorite_brand_ids, notifications_enabled')
         .eq('id', user.id)
         .maybeSingle();
 
+      if (profileError) {
+        showToast(`Profile could not be loaded from Supabase: ${profileError.message}`, 'error');
+      }
       const role = (profile?.role as ViewRole) || 'customer';
       setAuthSession({
         isAuthenticated: true,
@@ -1218,18 +1685,19 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         role,
         email: user.email || '',
         displayName: profile?.name || user.user_metadata?.name || user.email?.split('@')[0] || 'Eco Member',
+        userId: user.id,
         sellerBrandId: profile?.seller_brand_id || undefined
       });
       setViewRole(role);
-      setUser({
-        ...loadAccountProfile(
+      setUser(mergeSupabaseProfile(
+        loadAccountProfile(
           user.email || '',
           profile?.name || user.user_metadata?.name,
-          profile?.phone ?? user.user_metadata?.phone ?? '',
-          true
+          profile?.phone ?? user.user_metadata?.phone ?? ''
         ),
-        avatar: profile?.avatar_url || INITIAL_USER.avatar
-      });
+        profile as SupabaseProfileRecord | null,
+        true
+      ));
     };
 
     syncSupabaseSession();
@@ -1258,6 +1726,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         continueAsGuest,
         logout,
         openLoginPage,
+        updatePassword,
         selectedCategory,
         setSelectedCategory,
         selectedBrandFilter,

@@ -75,6 +75,7 @@ export interface Order {
   id: string;
   customerName: string;
   customerEmail?: string;
+  customerUserId?: string;
   customerPhone: string;
   deliveryAddress: string;
   items: OrderItem[];
@@ -146,6 +147,7 @@ export interface AuthSession {
   role: ViewRole;
   email: string;
   displayName: string;
+  userId?: string;
   sellerBrandId?: string;
 }
 

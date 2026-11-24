@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { useApp } from '../../context/AppContext';
+import { MAX_PROFILE_IMAGE_SIZE_MB, useApp } from '../../context/AppContext';
 import { 
   MapPin, 
   Package, 
@@ -72,7 +72,8 @@ export const ProfilePage: React.FC = () => {
     setProfileSubTab,
     authSession,
     logout,
-    openLoginPage
+    openLoginPage,
+    updatePassword
   } = useApp();
 
   // Rewards state
@@ -100,10 +101,46 @@ export const ProfilePage: React.FC = () => {
 
   const [selectedOrderDetails, setSelectedOrderDetails] = useState<Order | null>(null);
   const [isChangePasswordOpen, setIsChangePasswordOpen] = useState(false);
+  const [currentPassword, setCurrentPassword] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmNewPassword, setConfirmNewPassword] = useState('');
+  const [passwordError, setPasswordError] = useState('');
+  const [isUpdatingPassword, setIsUpdatingPassword] = useState(false);
 
   const handleNotificationsChange = async (enabled: boolean) => {
-    const result = await updateUserProfile({ notificationsEnabled: enabled });
-    if (!result.success) showToast(result.message, 'error');
+    try {
+      const result = await updateUserProfile({ notificationsEnabled: enabled });
+      if (!result.success) showToast(result.message, 'error');
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : 'Notification preferences could not be saved.', 'error');
+    }
+  };
+
+  const handleChangePassword = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (newPassword !== confirmNewPassword) {
+      setPasswordError('New passwords do not match.');
+      return;
+    }
+
+    setIsUpdatingPassword(true);
+    setPasswordError('');
+    try {
+      const result = await updatePassword(currentPassword, newPassword);
+      if (!result.success) {
+        setPasswordError(result.message);
+        return;
+      }
+
+      setCurrentPassword('');
+      setNewPassword('');
+      setConfirmNewPassword('');
+      setIsChangePasswordOpen(false);
+    } catch (error) {
+      setPasswordError(error instanceof Error ? error.message : 'Password could not be changed.');
+    } finally {
+      setIsUpdatingPassword(false);
+    }
   };
 
   useEffect(() => {
@@ -178,8 +215,8 @@ export const ProfilePage: React.FC = () => {
       setProfileSaveError('Choose a JPEG, PNG, or WebP image.');
       return;
     }
-    if (file.size > 2 * 1024 * 1024) {
-      setProfileSaveError('Profile pictures must be 2 MB or smaller.');
+    if (file.size > MAX_PROFILE_IMAGE_SIZE_MB * 1024 * 1024) {
+      setProfileSaveError(`Profile pictures must be ${MAX_PROFILE_IMAGE_SIZE_MB} MB or smaller.`);
       return;
     }
 
@@ -1031,7 +1068,7 @@ export const ProfilePage: React.FC = () => {
                       className="sr-only"
                     />
                   </label>
-                  <p className="text-[11px] text-[#718078]">JPEG, PNG, or WebP · up to 2 MB · hosted publicly</p>
+                  <p className="text-[11px] text-[#718078]">JPEG, PNG, or WebP · up to {MAX_PROFILE_IMAGE_SIZE_MB} MB · hosted publicly</p>
                 </div>
               </div>
               {profileSaveError && (
@@ -1288,7 +1325,7 @@ export const ProfilePage: React.FC = () => {
         </div>
       )}
 
-      {/* Change Password Demo Modal */}
+      {/* Change Password Modal */}
       {isChangePasswordOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
           <div
@@ -1297,36 +1334,53 @@ export const ProfilePage: React.FC = () => {
           />
           <div className="relative w-full max-w-sm bg-[#FFFFFF] rounded-2xl eco-shadow-modal p-6 z-10 border border-[#DCE4DB] space-y-4">
             <h3 className="font-bold text-base text-[#26332B] font-heading">Change Password</h3>
-            <p className="text-xs text-[#718078]">Demonstration feature for prototype authentication.</p>
-            <div className="space-y-2 text-xs">
+            <p className="text-xs text-[#718078]">Your password will be updated for this account.</p>
+            <form onSubmit={handleChangePassword} className="space-y-2 text-xs">
               <input
                 type="password"
+                required
                 placeholder="Current Password"
+                value={currentPassword}
+                onChange={(event) => setCurrentPassword(event.target.value)}
                 className="w-full px-3 py-2 border border-[#DCE4DB] rounded-lg"
               />
               <input
                 type="password"
+                required
+                minLength={6}
                 placeholder="New Password"
+                value={newPassword}
+                onChange={(event) => setNewPassword(event.target.value)}
                 className="w-full px-3 py-2 border border-[#DCE4DB] rounded-lg"
               />
-            </div>
-            <div className="flex justify-end gap-2 pt-2">
-              <button
-                onClick={() => setIsChangePasswordOpen(false)}
-                className="px-3 py-2 text-xs text-[#718078]"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={() => {
-                  setIsChangePasswordOpen(false);
-                  showToast('Password updated (Demonstration)', 'success');
-                }}
-                className="px-4 py-2 bg-[#286B4A] text-white rounded-lg text-xs font-semibold"
-              >
-                Update
-              </button>
-            </div>
+              <input
+                type="password"
+                required
+                minLength={6}
+                placeholder="Confirm New Password"
+                value={confirmNewPassword}
+                onChange={(event) => setConfirmNewPassword(event.target.value)}
+                className="w-full px-3 py-2 border border-[#DCE4DB] rounded-lg"
+              />
+              {passwordError && <p className="text-red-600" role="alert">{passwordError}</p>}
+              <div className="flex justify-end gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setIsChangePasswordOpen(false)}
+                  disabled={isUpdatingPassword}
+                  className="px-3 py-2 text-xs text-[#718078]"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={isUpdatingPassword}
+                  className="px-4 py-2 bg-[#286B4A] text-white rounded-lg text-xs font-semibold disabled:opacity-60"
+                >
+                  {isUpdatingPassword ? 'Updating...' : 'Update'}
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}
