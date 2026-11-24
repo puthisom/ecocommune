@@ -52,15 +52,21 @@ export const ShopDetailModal: React.FC = () => {
 
         {/* Hero Shop Photo */}
         <div className="relative h-48 sm:h-56 bg-[#F7F8F2] w-full shrink-0">
-          <img
-            src={shop.image}
-            alt={shop.name}
-            referrerPolicy="no-referrer"
-            className="w-full h-full object-cover"
-            onError={(e) => {
-              (e.target as HTMLImageElement).src = '/src/assets/images/shop_refill_corner_1794475239956.jpg';
-            }}
-          />
+          {shop.image ? (
+            <img
+              src={shop.image}
+              alt={shop.name}
+              referrerPolicy="no-referrer"
+              className="w-full h-full object-cover"
+              onError={(e) => {
+                (e.target as HTMLImageElement).src = '/src/assets/images/shop_refill_corner_1794475239956.jpg';
+              }}
+            />
+          ) : (
+            <div className="w-full h-full flex items-center justify-center text-7xl text-[#286B4A]">
+              {shop.logo}
+            </div>
+          )}
           <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/20 to-transparent" />
           
           <div className="absolute bottom-4 left-4 right-4 flex items-end justify-between">

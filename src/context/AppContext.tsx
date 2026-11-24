@@ -411,7 +411,13 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   const [brands, setBrands] = useState<Brand[]>(() => {
     try {
       const saved = localStorage.getItem('ecocommune_brands');
-      return saved ? JSON.parse(saved) : INITIAL_BRANDS;
+      if (!saved) return INITIAL_BRANDS;
+
+      const savedBrands = JSON.parse(saved) as Brand[];
+      const missingInitialBrands = INITIAL_BRANDS.filter(
+        (initialBrand) => !savedBrands.some((savedBrand) => savedBrand.id === initialBrand.id)
+      );
+      return [...savedBrands, ...missingInitialBrands];
     } catch {
       return INITIAL_BRANDS;
     }

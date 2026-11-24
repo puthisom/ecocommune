@@ -92,6 +92,27 @@ export const INITIAL_BRANDS: Brand[] = [
     },
     featured: true,
     status: 'active'
+  },
+  {
+    id: 'brand-zero-waste-center-phnom-penh',
+    name: 'Zero Waste Center- Phnom Penh',
+    logo: '♻️',
+    image: '',
+    category: 'Zero Waste Centers',
+    shortDescription: 'Zero-waste and waste-management location in Phnom Penh.',
+    fullDescription: 'A waste-management and zero-waste location in Phnom Penh. Use the map pin to navigate to the listing location.',
+    address: 'Chamrouen Community, Sangkat Chbar Ampov II',
+    district: 'Chbar Ampov',
+    phone: 'Not listed',
+    openingHours: 'Check Google Maps',
+    coordinates: {
+      lat: 11.5351884,
+      lng: 104.945062,
+      x: 82,
+      y: 82
+    },
+    featured: true,
+    status: 'active'
   }
 ];
 

@@ -558,6 +558,7 @@ export const SellerDashboard: React.FC = () => {
                 <option value="Reusable Product Shops">Reusable Product Shops</option>
                 <option value="Recycled Product Businesses">Recycled Product Businesses</option>
                 <option value="Sustainable Lifestyle Stores">Sustainable Lifestyle Stores</option>
+                <option value="Zero Waste Centers">Zero Waste Centers</option>
               </select>
             </div>
 

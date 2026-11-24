@@ -163,7 +163,8 @@ export const ShopMapPage: React.FC = () => {
     'Refill Shops',
     'Reusable Product Shops',
     'Recycled Product Businesses',
-    'Sustainable Lifestyle Stores'
+    'Sustainable Lifestyle Stores',
+    'Zero Waste Centers'
   ];
 
   // Filter shops
