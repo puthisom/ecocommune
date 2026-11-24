@@ -12,10 +12,10 @@ import {
   Layers,
   Leaf,
   ShieldCheck,
-  Clock,
   ArrowRight
 } from 'lucide-react';
 import { ProductCategory } from '../../types';
+import { INITIAL_PRODUCTS } from '../../data/mockData';
 
 export const MarketplacePage: React.FC = () => {
   const {
@@ -45,42 +45,36 @@ export const MarketplacePage: React.FC = () => {
   const categoryCards: {
     name: ProductCategory | 'All';
     label: string;
-    desc: string;
     icon: React.ReactNode;
     count: number;
   }[] = [
     {
       name: 'All',
-      label: 'All Products',
-      desc: 'Full sustainable catalog',
+      label: 'All products',
       icon: <Store className="w-5 h-5" />,
       count: products.length
     },
     {
       name: 'Reusable Products',
-      label: 'Reusable Products',
-      desc: 'Bottles, lunch boxes & totes',
+      label: 'Reusable',
       icon: <RefreshCw className="w-5 h-5" />,
       count: products.filter((p) => p.category === 'Reusable Products').length
     },
     {
       name: 'Refill Products',
-      label: 'Refill Products',
-      desc: 'Bulk soaps & home care',
+      label: 'Refill',
       icon: <Layers className="w-5 h-5" />,
       count: products.filter((p) => p.category === 'Refill Products').length
     },
     {
       name: 'Recycled Products',
-      label: 'Recycled Products',
-      desc: 'Upcycled sacks & paper',
+      label: 'Recycled',
       icon: <Leaf className="w-5 h-5" />,
       count: products.filter((p) => p.category === 'Recycled Products').length
     },
     {
       name: 'Plastic-Free Alternatives',
       label: 'Plastic-Free',
-      desc: 'Bamboo & solid bars',
       icon: <ShieldCheck className="w-5 h-5" />,
       count: products.filter((p) => p.category === 'Plastic-Free Alternatives').length
     }
@@ -135,27 +129,22 @@ export const MarketplacePage: React.FC = () => {
   };
 
   return (
-    <div className="container mx-auto px-4 lg:px-8 py-6 sm:py-8 space-y-8">
+    <div className="container mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-5 sm:py-8 space-y-6 sm:space-y-8">
       {/* Main Marketplace Header & Search */}
-      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 pb-2 border-b border-[#DCE4DB]">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 border-b border-[#DCE4DB]">
         <div>
-          <h1 className="text-2xl sm:text-3xl font-bold text-[#26332B] font-heading">
-            Cambodia Sustainable Marketplace
-          </h1>
-          <p className="text-xs sm:text-sm text-[#718078] mt-1">
-            Browse eco-friendly categories and local Cambodian sustainable shops.
-          </p>
+          <h1 className="text-2xl sm:text-3xl font-bold text-[#26332B] font-heading">Marketplace</h1>
         </div>
 
-        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5 w-full lg:w-auto">
-          <div className="relative w-full sm:w-72">
+        <div className="flex items-center gap-2.5 w-full sm:w-auto">
+          <div className="relative flex-1 sm:w-72 sm:flex-initial">
             <Search className="w-4 h-4 text-[#718078] absolute left-3.5 top-3" />
             <input
               type="text"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               placeholder="Search products or shops..."
-              className="w-full pl-10 pr-9 py-2.5 bg-[#FFFFFF] border border-[#DCE4DB] rounded-xl text-xs sm:text-sm focus:outline-none focus:border-[#286B4A] text-[#26332B]"
+              className="w-full pl-10 pr-9 py-2.5 bg-[#FFFFFF] border border-[#DCE4DB] rounded-xl text-sm focus:outline-none focus:border-[#286B4A] text-[#26332B]"
             />
             {searchQuery && (
               <button
@@ -169,10 +158,10 @@ export const MarketplacePage: React.FC = () => {
 
           <button
             onClick={() => setCustomerTab('map')}
-            className="px-4 py-2.5 rounded-xl bg-[#EDF4EB] hover:bg-[#DCE4DB] text-[#286B4A] text-xs font-semibold flex items-center justify-center gap-1.5 border border-[#A8C5A0]/60 transition-colors shrink-0"
+            className="px-3.5 py-2.5 rounded-xl bg-[#EDF4EB] hover:bg-[#DCE4DB] text-[#286B4A] text-xs font-semibold flex items-center justify-center gap-1.5 border border-[#A8C5A0]/60 transition-colors shrink-0"
           >
             <MapPin className="w-4 h-4" />
-            <span>View Shop Map</span>
+            <span>Map</span>
           </button>
         </div>
       </div>
@@ -180,14 +169,7 @@ export const MarketplacePage: React.FC = () => {
       {/* Section 1: Product Categories */}
       <section className="space-y-3">
         <div className="flex items-center justify-between">
-          <div>
-            <h2 className="text-lg sm:text-xl font-bold text-[#26332B] font-heading">
-              Product Categories
-            </h2>
-            <p className="text-xs text-[#718078]">
-              Select a sustainability category to filter products
-            </p>
-          </div>
+          <h2 className="text-lg sm:text-xl font-bold text-[#26332B] font-heading">Categories</h2>
           {selectedCategory !== 'All' && (
             <button
               onClick={() => setSelectedCategory('All')}
@@ -198,20 +180,20 @@ export const MarketplacePage: React.FC = () => {
           )}
         </div>
 
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2.5 sm:gap-3">
           {categoryCards.map((cat) => {
             const isActive = selectedCategory === cat.name;
             return (
               <button
                 key={cat.name}
                 onClick={() => setSelectedCategory(cat.name)}
-                className={`text-left p-4 rounded-2xl border transition-all flex flex-col justify-between ${
+                className={`text-left p-3 sm:p-4 rounded-2xl border transition-all flex flex-col justify-between min-h-24 ${
                   isActive
                     ? 'bg-[#286B4A] text-white border-[#286B4A] eco-shadow-sm'
                     : 'bg-[#FFFFFF] text-[#26332B] border-[#DCE4DB] hover:border-[#286B4A]'
                 }`}
               >
-                <div className="flex items-center justify-between mb-2.5">
+                <div className="flex items-center justify-between mb-2">
                   <div
                     className={`w-9 h-9 rounded-xl flex items-center justify-center ${
                       isActive ? 'bg-white/15 text-white' : 'bg-[#EDF4EB] text-[#286B4A]'
@@ -228,118 +210,11 @@ export const MarketplacePage: React.FC = () => {
                   </span>
                 </div>
                 <div>
-                  <h3 className="font-bold text-sm font-heading leading-snug">
+                  <h3 className="font-bold text-xs sm:text-sm font-heading leading-snug">
                     {cat.label}
                   </h3>
-                  <p
-                    className={`text-[11px] mt-0.5 line-clamp-1 ${
-                      isActive ? 'text-white/80' : 'text-[#718078]'
-                    }`}
-                  >
-                    {cat.desc}
-                  </p>
                 </div>
               </button>
-            );
-          })}
-        </div>
-      </section>
-
-      {/* Section 2: Cambodian Sustainable Shops List */}
-      <section className="space-y-3">
-        <div className="flex items-center justify-between">
-          <div>
-            <h2 className="text-lg sm:text-xl font-bold text-[#26332B] font-heading">
-              Cambodian Sustainable Shops
-            </h2>
-            <p className="text-xs text-[#718078]">
-              Local refill stations, plastic-free boutiques, and upcycled makers in Phnom Penh
-            </p>
-          </div>
-          {brandCollectionId && (
-            <button
-              onClick={() => setBrandCollectionId(null)}
-              className="text-xs font-semibold text-[#286B4A] hover:underline"
-            >
-              Show products from all shops
-            </button>
-          )}
-        </div>
-
-        <div className="bg-[#FFFFFF] rounded-2xl border border-[#DCE4DB] divide-y divide-[#DCE4DB] eco-shadow-sm overflow-hidden">
-          {activeBrands.map((shop) => {
-            const isSelected = brandCollectionId === shop.id;
-            const shopProductCount = products.filter((p) => p.brandId === shop.id).length;
-
-            return (
-              <div
-                key={shop.id}
-                className={`p-4 sm:p-5 flex flex-col lg:flex-row lg:items-center justify-between gap-4 transition-colors ${
-                  isSelected ? 'bg-[#EDF4EB]/50' : 'hover:bg-[#F7F8F2]/60'
-                }`}
-              >
-                <div className="flex items-start gap-3.5 min-w-0 flex-1">
-                  <div className="w-12 h-12 rounded-xl bg-[#EDF4EB] text-2xl flex items-center justify-center border border-[#DCE4DB] shrink-0">
-                    {shop.logo}
-                  </div>
-                  <div className="min-w-0 space-y-1">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <h3 className="font-bold text-sm sm:text-base text-[#26332B] font-heading">
-                        {shop.name}
-                      </h3>
-                      <span className="text-[11px] font-semibold text-[#286B4A] bg-[#EDF4EB] px-2 py-0.5 rounded">
-                        {shop.category}
-                      </span>
-                      <span className="text-[11px] text-[#718078] tabular-nums">
-                        · {shopProductCount} products
-                      </span>
-                    </div>
-                    <p className="text-xs text-[#718078] line-clamp-2 max-w-2xl">
-                      {shop.shortDescription}
-                    </p>
-                    <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px] text-[#718078] pt-0.5">
-                      <span className="flex items-center gap-1">
-                        <MapPin className="w-3.5 h-3.5 text-[#286B4A] shrink-0" />
-                        {shop.address}
-                      </span>
-                      <span className="flex items-center gap-1">
-                        <Clock className="w-3.5 h-3.5 text-[#286B4A] shrink-0" />
-                        {shop.openingHours}
-                      </span>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="flex flex-wrap items-center gap-2 shrink-0 lg:justify-end">
-                  <button
-                    onClick={() => setActiveShopModal(shop)}
-                    className="px-3 py-2 rounded-xl text-xs font-semibold text-[#26332B] bg-[#F7F8F2] hover:bg-[#DCE4DB] border border-[#DCE4DB] transition-colors"
-                  >
-                    Shop Info
-                  </button>
-                  <button
-                    onClick={() => {
-                      setSelectedMapShopId(shop.id);
-                      setCustomerTab('map');
-                    }}
-                    className="px-3 py-2 rounded-xl text-xs font-semibold text-[#286B4A] bg-[#EDF4EB] hover:bg-[#DCE4DB] transition-colors flex items-center gap-1"
-                  >
-                    <MapPin className="w-3.5 h-3.5" />
-                    <span>On Map</span>
-                  </button>
-                  <button
-                    onClick={() => handleSelectShop(shop.id)}
-                    className={`px-3.5 py-2 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-colors ${
-                      isSelected
-                        ? 'bg-[#26332B] text-white hover:bg-[#286B4A]'
-                        : 'bg-[#286B4A] text-white hover:bg-[#1F543A]'
-                    }`}
-                  >
-                    <span>{isSelected ? 'Showing Shop Products' : 'View Products'}</span>
-                    <ArrowRight className="w-3.5 h-3.5" />
-                  </button>
-                </div>
-              </div>
             );
           })}
         </div>
@@ -372,7 +247,7 @@ export const MarketplacePage: React.FC = () => {
         </div>
       )}
 
-      {/* Section 3: Product Catalog & Sorting */}
+      {/* Section 2: Product Catalog & Sorting */}
       <section className="space-y-4">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <div>
@@ -383,9 +258,7 @@ export const MarketplacePage: React.FC = () => {
                 ? 'All Sustainable Products'
                 : selectedCategory}
             </h2>
-            <p className="text-xs text-[#718078]">
-              Showing {sortedProducts.length} verified eco-friendly products in Cambodia
-            </p>
+            <p className="text-xs text-[#718078]">{sortedProducts.length} products</p>
           </div>
 
           <div className="flex items-center gap-2.5 flex-wrap">
@@ -490,9 +363,10 @@ export const MarketplacePage: React.FC = () => {
             </button>
           </div>
         ) : (
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-5">
+          <div className="grid grid-cols-1 min-[360px]:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3 sm:gap-5">
             {sortedProducts.map((prod) => {
               const isFav = user.favoriteProductIds.includes(prod.id);
+              const initialProductImage = INITIAL_PRODUCTS.find((product) => product.id === prod.id)?.image;
               return (
                 <div
                   key={prod.id}
@@ -503,9 +377,14 @@ export const MarketplacePage: React.FC = () => {
                       src={prod.image}
                       alt={prod.name}
                       referrerPolicy="no-referrer"
-                      className="w-full h-48 object-cover bg-[#F7F8F2] group-hover:scale-102 transition-transform duration-300"
+                      className="w-full h-36 sm:h-48 object-cover bg-[#F7F8F2] group-hover:scale-102 transition-transform duration-300"
                       onError={(e) => {
-                        (e.target as HTMLImageElement).src = '/src/assets/images/product_bamboo_goods_1794475239108.jpg';
+                        const image = e.currentTarget;
+                        if (initialProductImage && image.getAttribute('src') !== initialProductImage) {
+                          image.src = initialProductImage;
+                        } else {
+                          image.removeAttribute('src');
+                        }
                       }}
                     />
                     <button
@@ -522,31 +401,31 @@ export const MarketplacePage: React.FC = () => {
                     >
                       <Heart className={`w-4 h-4 ${isFav ? 'fill-current' : ''}`} />
                     </button>
-                    <span className="absolute bottom-2 left-2 text-[10px] font-semibold bg-white/95 text-[#286B4A] px-2 py-0.5 rounded backdrop-blur-xs">
+                    <span className="hidden sm:block absolute bottom-2 left-2 text-[10px] font-semibold bg-white/95 text-[#286B4A] px-2 py-0.5 rounded backdrop-blur-xs">
                       {prod.category}
                     </span>
                   </div>
 
-                  <div className="p-4 flex flex-col justify-between flex-1">
+                  <div className="p-3 sm:p-4 flex flex-col justify-between flex-1">
                     <div>
                       <button
                         onClick={() => setBrandCollectionId(prod.brandId)}
-                        className="text-[11px] text-[#718078] hover:text-[#286B4A] truncate mb-0.5 text-left block"
+                        className="text-[10px] sm:text-[11px] text-[#718078] hover:text-[#286B4A] truncate mb-0.5 text-left block"
                       >
                         {prod.brandName}
                       </button>
                       <h3
                         onClick={() => setActiveProductModal(prod)}
-                        className="font-semibold text-sm text-[#26332B] line-clamp-1 hover:text-[#286B4A] cursor-pointer"
+                        className="font-semibold text-xs sm:text-sm text-[#26332B] line-clamp-2 sm:line-clamp-1 hover:text-[#286B4A] cursor-pointer"
                       >
                         {prod.name}
                       </h3>
-                      <p className="text-xs text-[#718078] line-clamp-2 mt-1 leading-snug">
+                      <p className="hidden sm:block text-xs text-[#718078] line-clamp-2 mt-1 leading-snug">
                         {prod.description}
                       </p>
                     </div>
 
-                    <div className="mt-4 pt-3 border-t border-[#DCE4DB] flex items-center justify-between">
+                    <div className="mt-3 sm:mt-4 pt-3 border-t border-[#DCE4DB] flex items-center justify-between gap-1">
                       <div>
                         <span className="text-base font-bold text-[#286B4A] font-heading tabular-nums">
                           ${prod.price.toFixed(2)}
@@ -555,7 +434,7 @@ export const MarketplacePage: React.FC = () => {
                       <div className="flex items-center gap-1.5">
                         <button
                           onClick={() => setActiveProductModal(prod)}
-                          className="px-2.5 py-1.5 rounded-lg text-xs font-semibold text-[#286B4A] hover:bg-[#EDF4EB] transition-colors"
+                          className="px-2 py-1.5 rounded-lg text-[11px] sm:text-xs font-semibold text-[#286B4A] hover:bg-[#EDF4EB] transition-colors"
                         >
                           Details
                         </button>
@@ -579,6 +458,90 @@ export const MarketplacePage: React.FC = () => {
             })}
           </div>
         )}
+      </section>
+
+      {/* Section 3: Local shops */}
+      <section className="space-y-3">
+        <div className="flex items-center justify-between">
+          <h2 className="text-lg sm:text-xl font-bold text-[#26332B] font-heading">Local shops</h2>
+          {brandCollectionId && (
+            <button
+              onClick={() => setBrandCollectionId(null)}
+              className="text-xs font-semibold text-[#286B4A] hover:underline"
+            >
+              Show products from all shops
+            </button>
+          )}
+        </div>
+
+        <div className="bg-[#FFFFFF] rounded-2xl border border-[#DCE4DB] divide-y divide-[#DCE4DB] eco-shadow-sm overflow-hidden">
+          {activeBrands.map((shop) => {
+            const isSelected = brandCollectionId === shop.id;
+            const shopProductCount = products.filter((p) => p.brandId === shop.id).length;
+
+            return (
+              <div
+                key={shop.id}
+                className={`p-3.5 sm:p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-3 transition-colors ${
+                  isSelected ? 'bg-[#EDF4EB]/50' : 'hover:bg-[#F7F8F2]/60'
+                }`}
+              >
+                <div className="flex items-start gap-3.5 min-w-0 flex-1">
+                  <div className="w-12 h-12 rounded-xl bg-[#EDF4EB] text-2xl flex items-center justify-center border border-[#DCE4DB] shrink-0">
+                    {shop.logo}
+                  </div>
+                  <div className="min-w-0">
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      <h3 className="font-bold text-sm sm:text-base text-[#26332B] font-heading">
+                        {shop.name}
+                      </h3>
+                      <span className="text-[10px] font-semibold text-[#286B4A] bg-[#EDF4EB] px-2 py-0.5 rounded">
+                        {shop.category}
+                      </span>
+                    </div>
+                    <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-[#718078] mt-1">
+                      <span className="flex items-center gap-1">
+                        <MapPin className="w-3.5 h-3.5 text-[#286B4A] shrink-0" />
+                        {shop.district}
+                      </span>
+                      <span>{shopProductCount} products</span>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-1.5 shrink-0 sm:justify-end">
+                  <button
+                    onClick={() => setActiveShopModal(shop)}
+                    className="px-2.5 sm:px-3 py-2 rounded-xl text-[11px] sm:text-xs font-semibold text-[#26332B] bg-[#F7F8F2] hover:bg-[#DCE4DB] border border-[#DCE4DB] transition-colors"
+                  >
+                    Info
+                  </button>
+                  <button
+                    onClick={() => {
+                      setSelectedMapShopId(shop.id);
+                      setCustomerTab('map');
+                    }}
+                    className="px-2.5 sm:px-3 py-2 rounded-xl text-[11px] sm:text-xs font-semibold text-[#286B4A] bg-[#EDF4EB] hover:bg-[#DCE4DB] transition-colors flex items-center gap-1"
+                  >
+                    <MapPin className="w-3.5 h-3.5" />
+                    <span>Map</span>
+                  </button>
+                  <button
+                    onClick={() => handleSelectShop(shop.id)}
+                    className={`px-2.5 sm:px-3.5 py-2 rounded-xl text-[11px] sm:text-xs font-semibold flex items-center gap-1.5 transition-colors ${
+                      isSelected
+                        ? 'bg-[#26332B] text-white hover:bg-[#286B4A]'
+                        : 'bg-[#286B4A] text-white hover:bg-[#1F543A]'
+                    }`}
+                  >
+                    <span>{isSelected ? 'Viewing' : 'Products'}</span>
+                    <ArrowRight className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              </div>
+            );
+          })}
+        </div>
       </section>
     </div>
   );

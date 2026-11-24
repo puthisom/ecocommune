@@ -74,6 +74,7 @@ export interface OrderItem {
 export interface Order {
   id: string;
   customerName: string;
+  customerEmail?: string;
   customerPhone: string;
   deliveryAddress: string;
   items: OrderItem[];
@@ -130,6 +131,7 @@ export interface UserProfile {
   totalPointsRedeemed: number;
   favoriteProductIds: string[];
   favoriteBrandIds: string[];
+  notificationsEnabled?: boolean;
 }
 
 export type ViewRole = 'customer' | 'seller' | 'admin';

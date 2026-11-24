@@ -1,4 +1,12 @@
 import { Brand, Product, Reward, RewardRedemption, DeliveryAddress, UserProfile, Order } from '../types';
+import steelBottleImage from '../assets/images/pexels-water-bottle.jpg';
+import bambooToothbrushImage from '../assets/images/pexels-bamboo-toothbrush-trio.jpg';
+import herbalSoapImage from '../assets/images/pexels-herbal-soap.jpg';
+import riceSackJournalImage from '../assets/images/pexels-recycled-journal.jpg';
+import cottonToteImage from '../assets/images/pexels-organic-cotton-tote.jpg';
+import bentoContainerImage from '../assets/images/pexels-steel-lunch-box.jpg';
+import shampooBarImage from '../assets/images/pexels-shampoo-bar.jpg';
+import laundryRefillImage from '../assets/images/pexels-laundry-detergent.jpg';
 
 export const INITIAL_BRANDS: Brand[] = [
   {
@@ -95,7 +103,7 @@ export const INITIAL_PRODUCTS: Product[] = [
     brandName: 'Reuse Market Phnom Penh',
     price: 8.00,
     category: 'Reusable Products',
-    image: '/src/assets/images/product_steel_bottle_1794475240391.jpg',
+    image: steelBottleImage,
     description: 'Double-walled vacuum insulated 750ml water bottle crafted from 18/8 food-grade stainless steel with a natural bamboo cap seal. Keeps drinks cold for 24 hours in the Cambodian tropical heat.',
     sustainabilityNote: 'Verified 100% plastic-free body. Eliminates an estimated 160 single-use plastic bottles per user each month.',
     inStock: true,
@@ -110,7 +118,7 @@ export const INITIAL_PRODUCTS: Product[] = [
     brandName: 'Eco Living Cambodia',
     price: 2.00,
     category: 'Plastic-Free Alternatives',
-    image: '/src/assets/images/product_bamboo_goods_1794475239108.jpg',
+    image: bambooToothbrushImage,
     description: 'Set of three ergonomically shaped toothbrushes made from sustainably harvested natural bamboo with charcoal-infused BPA-free soft bristles for gentle gum care.',
     sustainabilityNote: 'The bamboo handle is 100% compostable and home degradable within 6 months. Packaged in unbleached recycled kraft paper.',
     inStock: true,
@@ -125,7 +133,7 @@ export const INITIAL_PRODUCTS: Product[] = [
     brandName: 'Green Corner Refill Store',
     price: 5.00,
     category: 'Refill Products',
-    image: '/src/assets/images/shop_refill_corner_1794475239956.jpg',
+    image: herbalSoapImage,
     description: 'Botanical castile liquid soap infused with lemongrass, kaffir lime, and cold-pressed coconut oil. Gentle on skin and naturally biodegradable in greywater systems.',
     sustainabilityNote: 'Sold in deposit glass pump bottles or direct refill for customer jars. 0% synthetic sulfate, palm oil, or microplastics.',
     inStock: true,
@@ -140,7 +148,7 @@ export const INITIAL_PRODUCTS: Product[] = [
     brandName: 'Green Basket Shop',
     price: 4.50,
     category: 'Recycled Products',
-    image: '/src/assets/images/product_bamboo_goods_1794475239108.jpg',
+    image: riceSackJournalImage,
     description: 'A5 spiral journal featuring a waterproof cover upcycled from washed Cambodian rice bags with 120 pages of unbleached 100% post-consumer recycled paper.',
     sustainabilityNote: 'Saves 0.2kg of discarded polypropylene sack waste per journal and supports local fair-wage artisans in Phnom Penh.',
     inStock: true,
@@ -155,7 +163,7 @@ export const INITIAL_PRODUCTS: Product[] = [
     brandName: 'Reuse Market Phnom Penh',
     price: 3.50,
     category: 'Reusable Products',
-    image: '/src/assets/images/hero_sustainable_cambodia_1794475237727.jpg',
+    image: cottonToteImage,
     description: 'Heavyweight 12oz unbleached organic cotton tote bag with reinforced cross-stitched handles. Spacious enough for weekly market produce and groceries.',
     sustainabilityNote: 'GOTS certified organic cotton. Machine washable and designed for over 500+ shopping trips.',
     inStock: true,
@@ -170,7 +178,7 @@ export const INITIAL_PRODUCTS: Product[] = [
     brandName: 'Reuse Market Phnom Penh',
     price: 6.00,
     category: 'Reusable Products',
-    image: '/src/assets/images/product_steel_bottle_1794475240391.jpg',
+    image: bentoContainerImage,
     description: 'Two-tier leak-resistant bento lunch box with locking clips. Ideal for bringing street food or office lunches without Styrofoam or single-use plastic boxes.',
     sustainabilityNote: '100% reusable stainless steel, zero PFAS, zero hormone-disrupting chemicals. Easy to clean.',
     inStock: true,
@@ -185,7 +193,7 @@ export const INITIAL_PRODUCTS: Product[] = [
     brandName: 'Eco Living Cambodia',
     price: 6.50,
     category: 'Plastic-Free Alternatives',
-    image: '/src/assets/images/product_bamboo_goods_1794475239108.jpg',
+    image: shampooBarImage,
     description: 'Concentrated waterless shampoo bar equivalent to two bottles of conventional liquid shampoo. Made with virgin coconut oil and aloe vera.',
     sustainabilityNote: 'Zero plastic bottle waste, zero chemical preservatives, travel friendly, zero runoff toxicity.',
     inStock: true,
@@ -200,7 +208,7 @@ export const INITIAL_PRODUCTS: Product[] = [
     brandName: 'Green Corner Refill Store',
     price: 4.00,
     category: 'Refill Products',
-    image: '/src/assets/images/shop_refill_corner_1794475239956.jpg',
+    image: laundryRefillImage,
     description: 'Plant-based laundry concentrate with natural eucalyptus oil. Effectively lifts stains while being safe for septic tanks and waterways.',
     sustainabilityNote: 'Sold by weight to eliminate plastic jug packaging. Refillable in your own jug or ecocommune returnable jug.',
     inStock: true,
@@ -262,7 +270,8 @@ export const INITIAL_USER: UserProfile = {
   totalPointsEarned: 290,
   totalPointsRedeemed: 40,
   favoriteProductIds: ['prod-1', 'prod-3'],
-  favoriteBrandIds: ['brand-1']
+  favoriteBrandIds: ['brand-1'],
+  notificationsEnabled: true
 };
 
 export const INITIAL_ADDRESSES: DeliveryAddress[] = [
@@ -292,6 +301,7 @@ export const INITIAL_ORDERS: Order[] = [
   {
     id: 'ORD-2026-084',
     customerName: 'Sophea Chan',
+    customerEmail: INITIAL_USER.email.toLowerCase(),
     customerPhone: '+855 12 789 456',
     deliveryAddress: 'Apartment 4B, Street 310, BKK1, Phnom Penh',
     items: [
@@ -324,6 +334,7 @@ export const INITIAL_ORDERS: Order[] = [
   {
     id: 'ORD-2026-092',
     customerName: 'Sophea Chan',
+    customerEmail: INITIAL_USER.email.toLowerCase(),
     customerPhone: '+855 12 789 456',
     deliveryAddress: 'Apartment 4B, Street 310, BKK1, Phnom Penh',
     items: [

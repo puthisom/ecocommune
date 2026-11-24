@@ -22,6 +22,30 @@ import {
 } from 'lucide-react';
 import { DeliveryAddress, Order, OrderStatus, Reward } from '../../types';
 
+const PHNOM_PENH_KHANS = [
+  'Doun Penh',
+  'Prampi Makara / 7 Makara',
+  'Chamkar Mon',
+  'Boeung Keng Kang / BKK',
+  'Tuol Kork',
+  'Sen Sok',
+  'Russei Keo',
+  'Mean Chey',
+  'Chroy Changvar',
+  'Chbar Ampov',
+  'Preaek Phnov',
+  'Pou Senchey',
+  'Dangkao',
+  'Kamboul'
+];
+
+const normalizeAddressDistrict = (district: string) => {
+  const normalized = district.trim().toLowerCase();
+  if (normalized.startsWith('boeung keng kang')) return 'Boeung Keng Kang / BKK';
+  if (normalized === 'tuol kouk') return 'Tuol Kork';
+  return district;
+};
+
 export const ProfilePage: React.FC = () => {
   const {
     user,
@@ -31,7 +55,7 @@ export const ProfilePage: React.FC = () => {
     updateAddress,
     deleteAddress,
     setDefaultAddress,
-    orders,
+    myOrders,
     products,
     brands,
     rewards,
@@ -71,12 +95,16 @@ export const ProfilePage: React.FC = () => {
   const [addrRecipient, setAddrRecipient] = useState(user.name);
   const [addrPhone, setAddrPhone] = useState(user.phone);
   const [addrStreet, setAddrStreet] = useState('');
-  const [addrDistrict, setAddrDistrict] = useState('Boeung Keng Kang 1 (BKK1)');
+  const [addrDistrict, setAddrDistrict] = useState('Boeung Keng Kang / BKK');
   const [addrIsDefault, setAddrIsDefault] = useState(false);
 
   const [selectedOrderDetails, setSelectedOrderDetails] = useState<Order | null>(null);
   const [isChangePasswordOpen, setIsChangePasswordOpen] = useState(false);
-  const [notificationsEnabled, setNotificationsEnabled] = useState(true);
+
+  const handleNotificationsChange = async (enabled: boolean) => {
+    const result = await updateUserProfile({ notificationsEnabled: enabled });
+    if (!result.success) showToast(result.message, 'error');
+  };
 
   useEffect(() => {
     setEditName(user.name);
@@ -166,7 +194,7 @@ export const ProfilePage: React.FC = () => {
     setAddrRecipient(user.name);
     setAddrPhone(user.phone);
     setAddrStreet('');
-    setAddrDistrict('Boeung Keng Kang 1 (BKK1)');
+    setAddrDistrict('Boeung Keng Kang / BKK');
     setAddrIsDefault(addresses.length === 0);
     setIsAddressModalOpen(true);
   };
@@ -178,7 +206,7 @@ export const ProfilePage: React.FC = () => {
     setAddrRecipient(addr.recipientName);
     setAddrPhone(addr.phone);
     setAddrStreet(addr.streetAddress);
-    setAddrDistrict(addr.district);
+    setAddrDistrict(normalizeAddressDistrict(addr.district));
     setAddrIsDefault(addr.isDefault);
     setIsAddressModalOpen(true);
   };
@@ -343,7 +371,7 @@ export const ProfilePage: React.FC = () => {
           }`}
         >
           <Package className="w-4 h-4" />
-          <span>My Orders ({orders.length})</span>
+          <span>My Orders ({myOrders.length})</span>
         </button>
 
         <button
@@ -565,7 +593,7 @@ export const ProfilePage: React.FC = () => {
       {/* Tab 2: Orders */}
       {profileSubTab === 'orders' && (
         <div className="space-y-4">
-          {orders.length === 0 ? (
+          {myOrders.length === 0 ? (
             <div className="bg-[#FFFFFF] p-10 rounded-2xl border border-[#DCE4DB] text-center text-[#718078] space-y-3">
               <Package className="w-12 h-12 text-[#A8C5A0] mx-auto" />
               <h3 className="font-bold text-base text-[#26332B] font-heading">No orders placed yet</h3>
@@ -581,7 +609,7 @@ export const ProfilePage: React.FC = () => {
             </div>
           ) : (
             <div className="space-y-3">
-              {orders.map((order) => (
+              {myOrders.map((order) => (
                 <div
                   key={order.id}
                   className="bg-[#FFFFFF] p-5 rounded-2xl border border-[#DCE4DB] hover:border-[#A8C5A0] transition-colors eco-shadow-sm flex flex-col md:flex-row items-start md:items-center justify-between gap-4"
@@ -856,8 +884,8 @@ export const ProfilePage: React.FC = () => {
               </div>
               <input
                 type="checkbox"
-                checked={notificationsEnabled}
-                onChange={(e) => setNotificationsEnabled(e.target.checked)}
+                checked={user.notificationsEnabled ?? true}
+                onChange={(e) => void handleNotificationsChange(e.target.checked)}
                 className="w-4 h-4 text-[#286B4A] rounded focus:ring-[#286B4A]"
               />
             </div>
@@ -1129,15 +1157,20 @@ export const ProfilePage: React.FC = () => {
               </div>
 
               <div>
-                <label className="block font-medium text-[#718078] mb-1">District (Khan / Sangkat)</label>
-                <input
-                  type="text"
-                  required
+                <label className="block font-medium text-[#718078] mb-1">District (Khan)</label>
+                <select
                   value={addrDistrict}
                   onChange={(e) => setAddrDistrict(e.target.value)}
-                  placeholder="e.g. Boeung Keng Kang 1"
-                  className="w-full px-3 py-2 border border-[#DCE4DB] rounded-lg text-xs"
-                />
+                  required
+                  className="w-full px-3 py-2 border border-[#DCE4DB] rounded-lg text-xs bg-white"
+                >
+                  {!PHNOM_PENH_KHANS.includes(addrDistrict) && (
+                    <option value={addrDistrict}>{addrDistrict}</option>
+                  )}
+                  {PHNOM_PENH_KHANS.map((khan) => (
+                    <option key={khan} value={khan}>{khan}</option>
+                  ))}
+                </select>
               </div>
 
               <div className="flex items-center gap-2 pt-1">

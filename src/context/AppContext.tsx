@@ -41,6 +41,70 @@ interface RegisteredAccount {
   sellerBrandId?: string;
 }
 
+const PRODUCT_IMAGE_VERSION_KEY = 'ecocommune_product_image_version';
+const PRODUCT_IMAGE_VERSION = 'pexels-1';
+const GUEST_ACCOUNT_ID = '__guest__';
+const DEMO_ACCOUNT_ID = INITIAL_USER.email.toLowerCase();
+
+const getActiveAccountId = (session: AuthSession): string | null => {
+  if (session.isAuthenticated && session.email.trim()) {
+    return session.email.trim().toLowerCase();
+  }
+  return session.isGuest ? GUEST_ACCOUNT_ID : null;
+};
+
+const getAccountCollectionStorageKey = (storageKey: string, accountId: string) =>
+  `${storageKey}_account_${encodeURIComponent(accountId)}`;
+
+const loadAccountCollection = <T,>(
+  accountId: string | null,
+  storageKey: string,
+  legacyStorageKey: string,
+  demoValues: T[]
+): T[] => {
+  if (!accountId || accountId === GUEST_ACCOUNT_ID) return [];
+
+  const accountStorageKey = getAccountCollectionStorageKey(storageKey, accountId);
+  try {
+    const saved = localStorage.getItem(accountStorageKey);
+    if (saved) return JSON.parse(saved) as T[];
+
+    if (accountId !== DEMO_ACCOUNT_ID) return [];
+
+    const legacy = localStorage.getItem(legacyStorageKey);
+    if (!legacy) return demoValues;
+
+    const migrated = JSON.parse(legacy) as T[];
+    localStorage.setItem(accountStorageKey, JSON.stringify(migrated));
+    return migrated;
+  } catch {
+    return accountId === DEMO_ACCOUNT_ID ? demoValues : [];
+  }
+};
+
+const loadProducts = (): Product[] => {
+  try {
+    const saved = localStorage.getItem('ecocommune_products');
+    if (!saved) return INITIAL_PRODUCTS;
+
+    const savedProducts = JSON.parse(saved) as Product[];
+    if (localStorage.getItem(PRODUCT_IMAGE_VERSION_KEY) === PRODUCT_IMAGE_VERSION) {
+      return savedProducts;
+    }
+
+    const initialProductsById = new Map(INITIAL_PRODUCTS.map((product) => [product.id, product]));
+    const updatedProducts = savedProducts.map((product) => {
+      const initialProduct = initialProductsById.get(product.id);
+      return initialProduct ? { ...product, image: initialProduct.image } : product;
+    });
+    localStorage.setItem('ecocommune_products', JSON.stringify(updatedProducts));
+    localStorage.setItem(PRODUCT_IMAGE_VERSION_KEY, PRODUCT_IMAGE_VERSION);
+    return updatedProducts;
+  } catch {
+    return INITIAL_PRODUCTS;
+  }
+};
+
 const createAccountProfile = (email: string, name: string, phone = ''): UserProfile => ({
   ...INITIAL_USER,
   name,
@@ -87,6 +151,24 @@ const loadAccountProfile = (email: string, name?: string, phone?: string, prefer
     };
   } catch {
     return { ...baseProfile, name: fallbackName, email: accountEmail, phone: phone ?? baseProfile.phone };
+  }
+};
+
+const loadOrders = (): Order[] => {
+  try {
+    const saved = localStorage.getItem('ecocommune_orders');
+    if (!saved) return INITIAL_ORDERS;
+
+    const savedOrders = JSON.parse(saved) as Order[];
+    const ordersWithOwner = savedOrders.map((order) => (
+      order.customerEmail ? order : { ...order, customerEmail: DEMO_ACCOUNT_ID }
+    ));
+    if (ordersWithOwner.some((order, index) => order !== savedOrders[index])) {
+      localStorage.setItem('ecocommune_orders', JSON.stringify(ordersWithOwner));
+    }
+    return ordersWithOwner;
+  } catch {
+    return INITIAL_ORDERS;
   }
 };
 
@@ -156,6 +238,7 @@ interface AppContextType {
   products: Product[];
   brands: Brand[];
   orders: Order[];
+  myOrders: Order[];
   rewards: Reward[];
   redemptions: RewardRedemption[];
   user: UserProfile;
@@ -219,6 +302,8 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       displayName: ''
     };
   });
+  const activeAccountId = getActiveAccountId(authSession);
+  const [loadedAccountId, setLoadedAccountId] = useState(activeAccountId);
 
   const [viewRole, setViewRole] = useState<ViewRole>(() => authSession.role || 'customer');
   const [customerTab, setCustomerTab] = useState<CustomerTab>('marketplace');
@@ -236,26 +321,19 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
   // Cart & Checkout
   const [cart, setCart] = useState<CartItem[]>(() => {
-    try {
-      const saved = localStorage.getItem('ecocommune_cart');
-      return saved ? JSON.parse(saved) : [];
-    } catch {
-      return [];
-    }
+    return loadAccountCollection<CartItem>(
+      activeAccountId,
+      'ecocommune_cart',
+      'ecocommune_cart',
+      []
+    );
   });
   const [isCartOpen, setIsCartOpen] = useState(false);
   const [isCheckoutOpen, setIsCheckoutOpen] = useState(false);
   const [orderConfirmation, setOrderConfirmation] = useState<Order | null>(null);
 
   // Entities stored in localStorage
-  const [products, setProducts] = useState<Product[]>(() => {
-    try {
-      const saved = localStorage.getItem('ecocommune_products');
-      return saved ? JSON.parse(saved) : INITIAL_PRODUCTS;
-    } catch {
-      return INITIAL_PRODUCTS;
-    }
-  });
+  const [products, setProducts] = useState<Product[]>(loadProducts);
 
   const [brands, setBrands] = useState<Brand[]>(() => {
     try {
@@ -266,14 +344,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     }
   });
 
-  const [orders, setOrders] = useState<Order[]>(() => {
-    try {
-      const saved = localStorage.getItem('ecocommune_orders');
-      return saved ? JSON.parse(saved) : INITIAL_ORDERS;
-    } catch {
-      return INITIAL_ORDERS;
-    }
-  });
+  const [orders, setOrders] = useState<Order[]>(loadOrders);
 
   const [rewards, setRewards] = useState<Reward[]>(() => {
     try {
@@ -285,25 +356,27 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   });
 
   const [redemptions, setRedemptions] = useState<RewardRedemption[]>(() => {
-    try {
-      const saved = localStorage.getItem('ecocommune_redemptions');
-      return saved ? JSON.parse(saved) : INITIAL_REDEMPTIONS;
-    } catch {
-      return INITIAL_REDEMPTIONS;
-    }
+    return loadAccountCollection<RewardRedemption>(
+      activeAccountId,
+      'ecocommune_redemptions',
+      'ecocommune_redemptions',
+      INITIAL_REDEMPTIONS
+    );
   });
 
   const [user, setUser] = useState<UserProfile>(() => authSession.isAuthenticated
     ? loadAccountProfile(authSession.email, authSession.displayName)
-    : INITIAL_USER);
+    : authSession.isGuest
+      ? createAccountProfile('', 'Guest')
+      : INITIAL_USER);
 
   const [addresses, setAddresses] = useState<DeliveryAddress[]>(() => {
-    try {
-      const saved = localStorage.getItem('ecocommune_addresses');
-      return saved ? JSON.parse(saved) : INITIAL_ADDRESSES;
-    } catch {
-      return INITIAL_ADDRESSES;
-    }
+    return loadAccountCollection<DeliveryAddress>(
+      activeAccountId,
+      'ecocommune_addresses',
+      'ecocommune_addresses',
+      INITIAL_ADDRESSES
+    );
   });
 
   const [commissionRate, setCommissionRate] = useState<number>(() => {
@@ -318,10 +391,48 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   const [activeSellerBrandId, setActiveSellerBrandId] = useState<string>('brand-1');
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
 
+  useEffect(() => {
+    if (loadedAccountId === activeAccountId) return;
+
+    setCart(loadAccountCollection<CartItem>(
+      activeAccountId,
+      'ecocommune_cart',
+      'ecocommune_cart',
+      []
+    ));
+    setRedemptions(loadAccountCollection<RewardRedemption>(
+      activeAccountId,
+      'ecocommune_redemptions',
+      'ecocommune_redemptions',
+      INITIAL_REDEMPTIONS
+    ));
+    setAddresses(loadAccountCollection<DeliveryAddress>(
+      activeAccountId,
+      'ecocommune_addresses',
+      'ecocommune_addresses',
+      INITIAL_ADDRESSES
+    ));
+    setUser(
+      authSession.isAuthenticated
+        ? loadAccountProfile(authSession.email, authSession.displayName)
+        : authSession.isGuest
+          ? createAccountProfile('', 'Guest')
+          : INITIAL_USER
+    );
+    setOrderConfirmation(null);
+    setIsCheckoutOpen(false);
+    setIsCartOpen(false);
+    setLoadedAccountId(activeAccountId);
+  }, [activeAccountId, authSession.displayName, authSession.email, authSession.isAuthenticated, authSession.isGuest, loadedAccountId]);
+
   // Sync to localStorage
   useEffect(() => {
-    localStorage.setItem('ecocommune_cart', JSON.stringify(cart));
-  }, [cart]);
+    if (!activeAccountId || activeAccountId === GUEST_ACCOUNT_ID || loadedAccountId !== activeAccountId) return;
+    localStorage.setItem(
+      getAccountCollectionStorageKey('ecocommune_cart', activeAccountId),
+      JSON.stringify(cart)
+    );
+  }, [activeAccountId, cart, loadedAccountId]);
 
   useEffect(() => {
     localStorage.setItem('ecocommune_products', JSON.stringify(products));
@@ -340,8 +451,12 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   }, [rewards]);
 
   useEffect(() => {
-    localStorage.setItem('ecocommune_redemptions', JSON.stringify(redemptions));
-  }, [redemptions]);
+    if (!activeAccountId || activeAccountId === GUEST_ACCOUNT_ID || loadedAccountId !== activeAccountId) return;
+    localStorage.setItem(
+      getAccountCollectionStorageKey('ecocommune_redemptions', activeAccountId),
+      JSON.stringify(redemptions)
+    );
+  }, [activeAccountId, loadedAccountId, redemptions]);
 
   useEffect(() => {
     if (!authSession.isAuthenticated || !authSession.email) return;
@@ -358,8 +473,12 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   }, [user, authSession.email, authSession.isAuthenticated]);
 
   useEffect(() => {
-    localStorage.setItem('ecocommune_addresses', JSON.stringify(addresses));
-  }, [addresses]);
+    if (!activeAccountId || activeAccountId === GUEST_ACCOUNT_ID || loadedAccountId !== activeAccountId) return;
+    localStorage.setItem(
+      getAccountCollectionStorageKey('ecocommune_addresses', activeAccountId),
+      JSON.stringify(addresses)
+    );
+  }, [activeAccountId, addresses, loadedAccountId]);
 
   useEffect(() => {
     localStorage.setItem('ecocommune_commission_rate', JSON.stringify(commissionRate));
@@ -387,6 +506,9 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   const deliveryFee = cart.length === 0 ? 0 : cartSubtotal >= 25 ? 0 : 1.50;
   const cartTotal = cartSubtotal + deliveryFee;
   const cartItemCount = cart.reduce((sum, item) => sum + item.quantity, 0);
+  const myOrders = authSession.isAuthenticated
+    ? orders.filter((order) => order.customerEmail?.trim().toLowerCase() === authSession.email.trim().toLowerCase())
+    : [];
 
   const addToCart = (product: Product, quantity = 1) => {
     setCart((prev) => {
@@ -437,6 +559,11 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     const newOrder: Order = {
       id: `ORD-2026-${Math.floor(100 + Math.random() * 900)}`,
       customerName: shippingInfo.name || user.name,
+      customerEmail: authSession.isAuthenticated
+        ? authSession.email.trim().toLowerCase()
+        : authSession.isGuest
+          ? GUEST_ACCOUNT_ID
+          : undefined,
       customerPhone: shippingInfo.phone || user.phone,
       deliveryAddress: shippingInfo.address,
       items: cart.map((c) => ({
@@ -697,27 +824,47 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   // Order status progression & Points award rule
   // Rule: "Earn 1 point for every $1 spent on eligible completed purchases. Points awarded after completed."
   const updateOrderStatus = (orderId: string, newStatus: OrderStatus) => {
+    const order = orders.find((item) => item.id === orderId);
+    if (!order) return;
+
+    const shouldAwardPoints = newStatus === 'Completed' && !order.pointsAwarded;
     setOrders((prev) =>
-      prev.map((order) => {
-        if (order.id !== orderId) return order;
-
-        let pointsAwarded = order.pointsAwarded;
-        if (newStatus === 'Completed' && !pointsAwarded) {
-          const pointsEarned = Math.floor(order.subtotal);
-          setUser((u) => ({
-            ...u,
-            pointsBalance: u.pointsBalance + pointsEarned,
-            totalPointsEarned: u.totalPointsEarned + pointsEarned
-          }));
-          pointsAwarded = true;
-          showToast(`Order marked Completed! +${pointsEarned} eco-points awarded to ${order.customerName}`, 'success');
-        } else {
-          showToast(`Order ${order.id} status changed to ${newStatus}`, 'info');
-        }
-
-        return { ...order, status: newStatus, pointsAwarded };
-      })
+      prev.map((item) => item.id === orderId
+        ? { ...item, status: newStatus, pointsAwarded: shouldAwardPoints || item.pointsAwarded }
+        : item)
     );
+
+    if (!shouldAwardPoints) {
+      showToast(`Order ${order.id} status changed to ${newStatus}`, 'info');
+      return;
+    }
+
+    const pointsEarned = Math.floor(order.subtotal);
+    const customerEmail = order.customerEmail?.trim().toLowerCase();
+    if (customerEmail && customerEmail === authSession.email.trim().toLowerCase()) {
+      setUser((currentUser) => ({
+        ...currentUser,
+        pointsBalance: currentUser.pointsBalance + pointsEarned,
+        totalPointsEarned: currentUser.totalPointsEarned + pointsEarned
+      }));
+    } else if (customerEmail && customerEmail !== GUEST_ACCOUNT_ID) {
+      try {
+        const savedProfiles = localStorage.getItem('ecocommune_user_profiles');
+        const profiles = savedProfiles
+          ? JSON.parse(savedProfiles) as Record<string, UserProfile>
+          : {};
+        const customerProfile = profiles[customerEmail] || loadAccountProfile(customerEmail);
+        profiles[customerEmail] = {
+          ...customerProfile,
+          pointsBalance: customerProfile.pointsBalance + pointsEarned,
+          totalPointsEarned: customerProfile.totalPointsEarned + pointsEarned
+        };
+        localStorage.setItem('ecocommune_user_profiles', JSON.stringify(profiles));
+      } catch {
+        showToast('Order status updated, but customer points could not be saved.', 'error');
+      }
+    }
+    showToast(`Order marked Completed! +${pointsEarned} eco-points awarded to ${order.customerName}`, 'success');
   };
 
   // Product CRUD
@@ -978,6 +1125,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   };
 
   const continueAsGuest = () => {
+    setUser(createAccountProfile('', 'Guest'));
     setAuthSession({
       isAuthenticated: false,
       isGuest: true,
@@ -994,6 +1142,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     if (isSupabaseConfigured && supabase) {
       await supabase.auth.signOut();
     }
+    setUser(INITIAL_USER);
     setAuthSession({
       isAuthenticated: false,
       isGuest: false,
@@ -1015,6 +1164,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   };
 
   const resetDemoData = () => {
+    const isDemoAccount = activeAccountId === DEMO_ACCOUNT_ID;
     localStorage.removeItem('ecocommune_products');
     localStorage.removeItem('ecocommune_brands');
     localStorage.removeItem('ecocommune_orders');
@@ -1024,14 +1174,23 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     localStorage.removeItem('ecocommune_addresses');
     localStorage.removeItem('ecocommune_cart');
     localStorage.removeItem('ecocommune_commission_rate');
+    if (activeAccountId && activeAccountId !== GUEST_ACCOUNT_ID) {
+      localStorage.removeItem(getAccountCollectionStorageKey('ecocommune_redemptions', activeAccountId));
+      localStorage.removeItem(getAccountCollectionStorageKey('ecocommune_addresses', activeAccountId));
+      localStorage.removeItem(getAccountCollectionStorageKey('ecocommune_cart', activeAccountId));
+    }
 
     setProducts(INITIAL_PRODUCTS);
     setBrands(INITIAL_BRANDS);
     setOrders(INITIAL_ORDERS);
     setRewards(INITIAL_REWARDS);
-    setRedemptions(INITIAL_REDEMPTIONS);
-    setUser(INITIAL_USER);
-    setAddresses(INITIAL_ADDRESSES);
+    setRedemptions(isDemoAccount ? INITIAL_REDEMPTIONS : []);
+    setUser(authSession.isAuthenticated && !isDemoAccount
+      ? createAccountProfile(authSession.email, user.name, user.phone)
+      : authSession.isGuest
+        ? createAccountProfile('', 'Guest')
+        : INITIAL_USER);
+    setAddresses(isDemoAccount ? INITIAL_ADDRESSES : []);
     setCart([]);
     setCommissionRate(0.10);
     showToast('Demonstration data reset to defaults', 'info');
@@ -1134,6 +1293,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         products,
         brands,
         orders,
+        myOrders,
         rewards,
         redemptions,
         user,
